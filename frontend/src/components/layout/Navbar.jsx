@@ -1,8 +1,10 @@
-// src/components/layout/Navbar.jsx
 import React from "react";
 import { Link, NavLink } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext.jsx";
 
 function Navbar() {
+  const { user, logout } = useAuth();
+
   const linkBase =
     "text-sm px-2 py-1 rounded hover:text-blue-600 hover:bg-slate-100";
 
@@ -54,16 +56,31 @@ function Navbar() {
           >
             Admin
           </NavLink>
-          <NavLink
-            to="/login"
-            className={({ isActive }) =>
-              `${linkBase} ${
-                isActive ? "text-blue-600 font-semibold" : "text-slate-700"
-              }`
-            }
-          >
-            Login
-          </NavLink>
+
+          {user ? (
+            <>
+              <span className="text-sm text-slate-700">
+                Hi, {user.fullName.split(" ")[0]}
+              </span>
+              <button
+                onClick={logout}
+                className="text-sm px-2 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200"
+              >
+                Logout
+              </button>
+            </>
+          ) : (
+            <NavLink
+              to="/login"
+              className={({ isActive }) =>
+                `${linkBase} ${
+                  isActive ? "text-blue-600 font-semibold" : "text-slate-700"
+                }`
+              }
+            >
+              Login
+            </NavLink>
+          )}
         </nav>
       </div>
     </header>

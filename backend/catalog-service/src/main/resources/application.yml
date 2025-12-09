@@ -1,0 +1,16 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: catalog-service
+
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/ecom_catalog
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

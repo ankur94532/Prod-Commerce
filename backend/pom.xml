@@ -25,6 +25,8 @@
 
     <modules>
         <module>auth-service</module>
+        <module>catalog-service</module>
+        <module>cart-service</module>
         <!-- later: catalog-service, order-service, etc. -->
     </modules>
 

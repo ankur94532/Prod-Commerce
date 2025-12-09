@@ -1,3 +1,25 @@
-"frontend/node_modules" 
-"frontend/dist" 
-"backend/**/target"
+# Maven / Gradle / build
+backend/**/target/
+**/out/
+**/build/
+
+# Node / React
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# IDE stuff
+.idea/
+.vscode/
+*.iml
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Env / secrets (if any later)
+.env
+.env.local
