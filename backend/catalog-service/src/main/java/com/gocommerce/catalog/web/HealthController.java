@@ -7,14 +7,13 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping("/api/v1/products")
 public class HealthController {
 
     @GetMapping("/health")
     public Map<String, Object> health() {
         return Map.of(
-            "status", "OK",
-            "service", "catalog-service"
-        );
+                "status", "OK",
+                "service", "catalog-service");
     }
 }

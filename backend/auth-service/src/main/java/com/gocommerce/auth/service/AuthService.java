@@ -5,6 +5,7 @@ import com.gocommerce.auth.dto.LoginRequest;
 import com.gocommerce.auth.dto.RegisterRequest;
 import com.gocommerce.auth.dto.UserResponse;
 import com.gocommerce.auth.entity.User;
+import com.gocommerce.auth.model.Role;
 import com.gocommerce.auth.repository.UserRepository;
 import com.gocommerce.auth.security.JwtService;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -36,7 +37,7 @@ public class AuthService {
                 request.getEmail(),
                 passwordEncoder.encode(request.getPassword()),
                 request.getFullName(),
-                "customer");
+                Role.USER);
 
         user = userRepository.save(user);
         return buildAuthResponse(user);
@@ -65,7 +66,7 @@ public class AuthService {
                 user.getId(),
                 user.getEmail(),
                 user.getFullName(),
-                user.getRole(),
+                user.getRole().name(),
                 user.getCreatedAt());
 
         AuthResponse resp = new AuthResponse();

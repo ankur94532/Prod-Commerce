@@ -1,3 +1,4 @@
+// src/main/java/com/gocommerce/catalog/dto/ProductResponse.java
 package com.gocommerce.catalog.dto;
 
 import java.math.BigDecimal;
@@ -6,7 +7,7 @@ import java.util.Map;
 
 public class ProductResponse {
 
-    private String id;
+    private Long id;
     private String slug;
     private String name;
     private String description;
@@ -21,17 +22,17 @@ public class ProductResponse {
     public ProductResponse() {
     }
 
-    public ProductResponse(String id,
-                           String slug,
-                           String name,
-                           String description,
-                           BigDecimal price,
-                           String currency,
-                           String categorySlug,
-                           String brand,
-                           List<String> imageUrls,
-                           Integer stockQuantity,
-                           Map<String, String> attributes) {
+    public ProductResponse(Long id,
+            String slug,
+            String name,
+            String description,
+            BigDecimal price,
+            String currency,
+            String categorySlug,
+            String brand,
+            List<String> imageUrls,
+            Integer stockQuantity,
+            Map<String, String> attributes) {
         this.id = id;
         this.slug = slug;
         this.name = name;
@@ -45,7 +46,7 @@ public class ProductResponse {
         this.attributes = attributes;
     }
 
-    public String getId() {
+    public Long getId() {
         return id;
     }
 
@@ -89,7 +90,7 @@ public class ProductResponse {
         return attributes;
     }
 
-    public void setId(String id) {
+    public void setId(Long id) {
         this.id = id;
     }
 

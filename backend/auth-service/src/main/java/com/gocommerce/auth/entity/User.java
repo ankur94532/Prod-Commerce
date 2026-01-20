@@ -1,6 +1,8 @@
 package com.gocommerce.auth.entity;
 
+import com.gocommerce.auth.model.Role;
 import jakarta.persistence.*;
+
 import java.time.Instant;
 
 @Entity
@@ -23,8 +25,9 @@ public class User {
     @Column(nullable = false, length = 100)
     private String fullName;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private String role = "customer"; // later: maybe use an enum
+    private Role role = Role.USER;
 
     @Column(nullable = false)
     private Instant createdAt = Instant.now();
@@ -36,11 +39,11 @@ public class User {
         // JPA
     }
 
-    public User(String email, String passwordHash, String fullName, String role) {
+    public User(String email, String passwordHash, String fullName, Role role) {
         this.email = email;
         this.passwordHash = passwordHash;
         this.fullName = fullName;
-        this.role = role;
+        this.role = role != null ? role : Role.USER;
     }
 
     @PreUpdate
@@ -48,7 +51,6 @@ public class User {
         this.updatedAt = Instant.now();
     }
 
-    // getters & setters (generate via IDE if you want)
     public String getId() {
         return id;
     }
@@ -77,12 +79,12 @@ public class User {
         this.fullName = fullName;
     }
 
-    public String getRole() {
+    public Role getRole() {
         return role;
     }
 
-    public void setRole(String role) {
-        this.role = role;
+    public void setRole(Role role) {
+        this.role = role != null ? role : Role.USER;
     }
 
     public Instant getCreatedAt() {

@@ -1,3 +1,4 @@
+// src/main/java/com/gocommerce/catalog/service/ProductService.java
 package com.gocommerce.catalog.service;
 
 import com.gocommerce.catalog.dto.ProductResponse;
@@ -30,23 +31,22 @@ public class ProductService {
 
     public ProductResponse getBySlug(String slug) {
         Product product = productRepository.findBySlugAndActiveTrue(slug)
-            .orElseThrow(() -> new NoSuchElementException("Product not found"));
+                .orElseThrow(() -> new NoSuchElementException("Product not found"));
         return toResponse(product);
     }
 
     private ProductResponse toResponse(Product p) {
         return new ProductResponse(
-            p.getId(),
-            p.getSlug(),
-            p.getName(),
-            p.getDescription(),
-            p.getPrice(),
-            p.getCurrency(),
-            p.getCategorySlug(),
-            p.getBrand(),
-            p.getImageUrls(),
-            p.getStockQuantity(),
-            p.getAttributes()
-        );
+                p.getId(),
+                p.getSlug(),
+                p.getName(),
+                p.getDescription(),
+                p.getPrice(),
+                p.getCurrency(),
+                p.getCategorySlug(),
+                p.getBrand(),
+                p.getImageUrls(),
+                p.getStockQuantity(),
+                p.getAttributes());
     }
 }

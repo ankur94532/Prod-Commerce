@@ -25,7 +25,7 @@ public class JwtService {
                 .setSubject(user.getId())
                 .addClaims(Map.of(
                         "email", user.getEmail(),
-                        "role", user.getRole(),
+                        "role", user.getRole().name(),
                         "fullName", user.getFullName()))
                 .setIssuedAt(Date.from(now))
                 .setExpiration(Date.from(now.plus(props.getAccessTokenTtl())))

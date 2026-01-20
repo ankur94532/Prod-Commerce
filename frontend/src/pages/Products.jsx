@@ -20,6 +20,7 @@ function Products() {
     setError("");
     try {
       const res = await fetchProducts({ page, size: 12, category: cat || undefined });
+      console.log(res.data);
       setProducts(res.data);
       setMeta({
         page: res.page,

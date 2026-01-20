@@ -21,36 +21,38 @@ public class CartService {
 
     public Cart getCart(String userId) {
         return cartRepository.findById(userId)
-            .orElseGet(() -> new Cart(userId));
+                .orElseGet(() -> new Cart(userId));
     }
 
     public Cart addItem(String userId, AddCartItemRequest request) {
         Cart cart = cartRepository.findById(userId)
-            .orElseGet(() -> new Cart(userId));
+                .orElseGet(() -> new Cart(userId));
 
         // if item with same productId exists, increase quantity
         Optional<CartItem> existing = cart.getItems().stream()
-            .filter(i -> i.getProductId().equals(request.getProductId()))
-            .findFirst();
+                .filter(i -> i.getProductId().equals(request.getProductId()))
+                .findFirst();
 
         if (existing.isPresent()) {
             CartItem item = existing.get();
             item.setQuantity(item.getQuantity() + request.getQuantity());
         } else {
             CartItem newItem = new CartItem(
-                request.getProductId(),
-                request.getProductSlug(),
-                request.getName(),
-                request.getPrice(),
-                request.getCurrency(),
-                request.getQuantity(),
-                request.getImageUrl()
-            );
+                    request.getProductId(),
+                    request.getProductSlug(),
+                    request.getName(),
+                    request.getPrice(),
+                    request.getCurrency(),
+                    request.getQuantity(),
+                    request.getImageUrl());
             cart.getItems().add(newItem);
         }
 
         return cartRepository.save(cart);
     }
 
-    // later: update quantity, remove item, clear cart...
+    @Transactional
+    public void clearCart(String userId) {
+        cartRepository.deleteById(userId);
+    }
 }

@@ -1,37 +1,57 @@
+// src/main/java/com/gocommerce/catalog/entity/Product.java
 package com.gocommerce.catalog.entity;
 
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.Document;
+import jakarta.persistence.*;
 
 import java.math.BigDecimal;
-import java.util.List;
-import java.util.Map;
-
-@Document(collection = "products")
+import java.util.*;
+import jakarta.persistence.FetchType;
+@Entity
+@Table(name = "products")
 public class Product {
 
     @Id
-    private String id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-    @Indexed(unique = true)
+    @Column(nullable = false, unique = true)
     private String slug;
 
+    @Column(nullable = false)
     private String name;
+
+    @Column(columnDefinition = "text")
     private String description;
 
+    @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal price;
-    private String currency;        // e.g. "INR"
 
-    private String categorySlug;    // e.g. "smartphones"
+    @Column(nullable = false, length = 3)
+    private String currency; // e.g. "INR"
+
+    @Column(name = "category_slug")
+    private String categorySlug; // e.g. "smartphones"
+
     private String brand;
 
-    private List<String> imageUrls;
+    // 👉 EAGER so it's fully loaded before JSON serialization
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "product_images", joinColumns = @JoinColumn(name = "product_id"))
+    @Column(name = "image_url")
+    private List<String> imageUrls = new ArrayList<>();
 
+    @Column(name = "stock_quantity")
     private Integer stockQuantity;
+
+    @Column(nullable = false)
     private boolean active;
 
-    private Map<String, String> attributes; // e.g. color=black, storage=256GB
+    // 👉 Also EAGER to avoid the same issue if you serialize attributes
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "product_attributes", joinColumns = @JoinColumn(name = "product_id"))
+    @MapKeyColumn(name = "attr_key")
+    @Column(name = "attr_value")
+    private Map<String, String> attributes = new HashMap<>();
 
     public Product() {
     }
@@ -54,13 +74,13 @@ public class Product {
         this.currency = currency;
         this.categorySlug = categorySlug;
         this.brand = brand;
-        this.imageUrls = imageUrls;
+        this.imageUrls = imageUrls != null ? imageUrls : new ArrayList<>();
         this.stockQuantity = stockQuantity;
         this.active = active;
-        this.attributes = attributes;
+        this.attributes = attributes != null ? attributes : new HashMap<>();
     }
 
-    public String getId() {
+    public Long getId() {
         return id;
     }
 

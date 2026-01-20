@@ -1,3 +1,4 @@
+# src/main/resources/application.yml
 server:
   port: 8082
 
@@ -5,12 +6,25 @@ spring:
   application:
     name: catalog-service
 
-  data:
-    mongodb:
-      uri: mongodb://localhost:27017/ecom_catalog
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ecom_catalog
+    username: ecom_user
+    password: ecom_pass
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update # dev only
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: true
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: catalog-service

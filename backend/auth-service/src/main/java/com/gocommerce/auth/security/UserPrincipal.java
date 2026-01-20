@@ -1,6 +1,7 @@
 package com.gocommerce.auth.security;
 
 import com.gocommerce.auth.entity.User;
+import com.gocommerce.auth.model.Role;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -15,7 +16,7 @@ public class UserPrincipal implements UserDetails {
     private final String email;
     private final String passwordHash;
     private final String fullName;
-    private final String role;
+    private final Role role;
     private final Instant createdAt;
 
     public UserPrincipal(User user) {
@@ -36,7 +37,7 @@ public class UserPrincipal implements UserDetails {
     }
 
     public String getRole() {
-        return role;
+        return role.name();
     }
 
     public Instant getCreatedAt() {
@@ -45,7 +46,7 @@ public class UserPrincipal implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()));
+        return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }
 
     @Override

@@ -9,10 +9,14 @@ import Products from "./pages/Products.jsx";
 import ProductDetail from "./pages/ProductDetail.jsx";
 import Cart from "./pages/Cart.jsx";
 import Checkout from "./pages/Checkout.jsx";
-import Orders from "./pages/Orders.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
+import SearchResultsPage from "./pages/SearchResultsPage";
+import OrdersPage from "./pages/OrdersPage";
+import AdminAnalyticsPage from "./pages/AdminAnalyticsPage.jsx";
+import AdminProductsPage from "./pages/AdminProductsPage.jsx";
+import AdminUsersPage from "./pages/AdminUsersPage.jsx";
 
 function App() {
   return (
@@ -25,10 +29,16 @@ function App() {
           <Route path="/products/:slug" element={<ProductDetail />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout />} />
-          <Route path="/orders" element={<Orders />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+
           <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
+          <Route path="/admin/products" element={<AdminProductsPage />} />
+          <Route path="/admin/users" element={<AdminUsersPage />} />
+
+          <Route path="/search" element={<SearchResultsPage />} />
+          <Route path="/orders" element={<OrdersPage />} />
         </Routes>
       </main>
       <Footer />

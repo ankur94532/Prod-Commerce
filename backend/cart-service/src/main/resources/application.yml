@@ -15,4 +15,11 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: cart-service
+
+security:
+  jwt:
+    secret: "this_is_a_dev_secret_change_later_1234567890"

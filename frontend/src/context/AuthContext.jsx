@@ -1,29 +1,52 @@
+// src/context/AuthContext.jsx
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { fetchMe } from "../api/auth";
+import { fetchCurrentUser } from "../api/auth";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [tokens, setTokens] = useState(null);
+  const [tokens, setTokens] = useState(null); // { accessToken, refreshToken }
   const [loading, setLoading] = useState(true);
 
   // on mount, try to restore tokens
   useEffect(() => {
     const stored = localStorage.getItem("auth");
-    if (stored) {
+    if (!stored) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      //console.log("stringified tokens:", stored);
       const parsed = JSON.parse(stored);
+      //console.log("parsed tokens:", parsed);
+
       setTokens(parsed);
-      // try loading current user
-      fetchMe()
+
+      const accessToken = parsed?.accessToken;
+      if (!accessToken) {
+        console.warn("No accessToken in stored auth, clearing it");
+        setTokens(null);
+        localStorage.removeItem("auth");
+        setLoading(false);
+        return;
+      }
+
+      // now actually call /me with the token
+      fetchCurrentUser(accessToken)
         .then((u) => setUser(u))
-        .catch(() => {
+        .catch((err) => {
+          console.error("Failed to fetch current user:", err);
           setUser(null);
           setTokens(null);
           localStorage.removeItem("auth");
         })
         .finally(() => setLoading(false));
-    } else {
+    } catch (e) {
+      console.error("Failed to parse stored auth tokens:", e);
+      setTokens(null);
+      localStorage.removeItem("auth");
       setLoading(false);
     }
   }, []);
@@ -31,6 +54,7 @@ export function AuthProvider({ children }) {
   const login = ({ user, tokens }) => {
     setUser(user);
     setTokens(tokens);
+    // tokens should be { accessToken, refreshToken }
     localStorage.setItem("auth", JSON.stringify(tokens));
   };
 

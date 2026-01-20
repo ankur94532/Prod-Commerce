@@ -1,0 +1,83 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+  cloud:
+    gateway:
+      globalcors:
+        corsConfigurations:
+          "[/**]":
+            allowedOrigins:
+              - "http://localhost:5173"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders:
+              - "*"
+            allowCredentials: true
+
+      routes:
+        # Auth
+        - id: auth-service
+          uri: ${AUTH_SERVICE_URI:http://localhost:8081}
+          predicates:
+            - Path=/api/v1/auth/**,/api/v1/admin/users/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 1
+                redis-rate-limiter.burstCapacity: 2
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
+
+        # Catalog / products
+        - id: catalog-service
+          uri: ${CATALOG_SERVICE_URI:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/products/**,/api/v1/admin/products/**
+
+        # Cart
+        - id: cart-service
+          uri: ${CART_SERVICE_URI:http://localhost:8083}
+          predicates:
+            - Path=/api/v1/cart/**
+
+        # Search
+        - id: search-service
+          uri: ${SEARCH_SERVICE_URI:http://localhost:8084}
+          predicates:
+            - Path=/api/v1/search/**
+
+        - id: order-service
+          uri: ${ORDER_SERVICE_URI:http://localhost:8085}
+          predicates:
+            - Path=/api/v1/orders/**
+
+        - id: analytics-service
+          uri: ${ANALYTICS_SERVICE_URI:http://localhost:8086}
+          predicates:
+            - Path=/api/v1/analytics/**
+
+        - id: recommendation-service
+          uri: ${RECOMMENDATION_SERVICE_URI:http://localhost:8087}
+          predicates:
+            - Path=/api/v1/recommendations/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: api-gateway
