@@ -7,7 +7,7 @@ import com.gocommerce.catalog.repository.ProductRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-
+import java.util.List;
 import java.util.NoSuchElementException;
 
 @Service
@@ -34,7 +34,9 @@ public class ProductService {
                 .orElseThrow(() -> new NoSuchElementException("Product not found"));
         return toResponse(product);
     }
-
+    public List<String> getAvailableCategories() {
+        return productRepository.findDistinctActiveCategorySlugs();
+    }
     private ProductResponse toResponse(Product p) {
         return new ProductResponse(
                 p.getId(),

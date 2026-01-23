@@ -42,8 +42,8 @@ class SearchControllerTest {
         @Test
         void health_returnsOk() throws Exception {
                 mockMvc.perform(get("/api/v1/search/health"))
-                                .andExpect(status().isOk())
-                                .andExpect(content().string(containsString("search-service:OK")));
+                        .andExpect(status().isOk())
+                        .andExpect(content().string(containsString("search-service:OK")));
         }
 
         @Test
@@ -53,33 +53,35 @@ class SearchControllerTest {
 
                 // Fake ES document
                 ProductDocument doc = new ProductDocument(
-                                "p1",
-                                "macbook-pro-14",
-                                "MacBook Pro 14 M3",
-                                "laptops",
-                                new BigDecimal("199900"),
-                                "INR",
-                                List.of("apple", "laptop"),
-                                "https://example.com/mac.jpg");
+                        "p1",
+                        "macbook-pro-14",
+                        "MacBook Pro 14 M3",
+                        "laptops",
+                        new BigDecimal("199900"),
+                        "INR",
+                        List.of("apple", "laptop"),
+                        "https://example.com/mac.jpg",
+                        100L      // new popularityScore argument
+                );
 
                 Page<ProductDocument> page = new PageImpl<>(
-                                List.of(doc),
-                                PageRequest.of(0, 20),
-                                1);
+                        List.of(doc),
+                        PageRequest.of(0, 20),
+                        1);
 
                 when(productSearchRepository
-                                .searchByNameOrCategory(
-                                                anyString(),
-                                                anyString(),
-                                                any(Pageable.class)))
-                                .thenReturn(page);
+                        .searchByNameOrCategory(
+                                anyString(),
+                                anyString(),
+                                any(Pageable.class)))
+                        .thenReturn(page);
 
                 mockMvc.perform(get("/api/v1/search")
                                 .param("q", "laptop"))
-                                .andExpect(status().isOk())
-                                .andExpect(jsonPath("$.total").value(1))
-                                .andExpect(jsonPath("$.items[0].id").value("p1"))
-                                .andExpect(jsonPath("$.items[0].name").value(containsString("MacBook Pro")))
-                                .andExpect(jsonPath("$.items[0].category").value("laptops"));
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.total").value(1))
+                        .andExpect(jsonPath("$.items[0].id").value("p1"))
+                        .andExpect(jsonPath("$.items[0].name").value(containsString("MacBook Pro")))
+                        .andExpect(jsonPath("$.items[0].category").value("laptops"));
         }
 }

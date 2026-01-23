@@ -34,4 +34,7 @@ management:
         include: health,info,prometheus
   metrics:
     tags:
-      application: auth-service
+      service: auth-service
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true

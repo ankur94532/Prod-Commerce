@@ -1,8 +1,8 @@
-// src/main/java/com/gocommerce/catalog/web/AdminProductController.java
 package com.gocommerce.catalog.web;
 
 import com.gocommerce.catalog.dto.AdminProductRequest;
 import com.gocommerce.catalog.entity.Product;
+import com.gocommerce.catalog.metrics.CatalogMetrics;
 import com.gocommerce.catalog.service.AdminProductService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -13,7 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-
+import org.springframework.beans.factory.annotation.Autowired;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,9 +26,17 @@ public class AdminProductController {
     private static final Logger logger = LoggerFactory.getLogger(AdminProductController.class);
 
     private final AdminProductService adminProductService;
-
-    public AdminProductController(AdminProductService adminProductService) {
+    private final CatalogMetrics catalogMetrics;
+    @Autowired
+    public AdminProductController(AdminProductService adminProductService,
+                                  CatalogMetrics catalogMetrics) {
         this.adminProductService = adminProductService;
+        this.catalogMetrics = catalogMetrics;
+    }
+
+    // ctor kept for tests that only pass the service
+    public AdminProductController(AdminProductService adminProductService) {
+        this(adminProductService, null);
     }
 
     // ---------- LIST ----------
@@ -55,6 +63,11 @@ public class AdminProductController {
         );
 
         logger.info("Admin product list page={} size={} total={}", page, size, result.getTotalElements());
+
+        if (catalogMetrics != null) {
+            catalogMetrics.onProductList();
+        }
+
         return ResponseEntity.ok(body);
     }
 
@@ -64,6 +77,11 @@ public class AdminProductController {
     @GetMapping("/{id}")
     public ResponseEntity<?> getOne(@PathVariable Long id) {
         Product product = adminProductService.getProduct(id);
+
+        if (catalogMetrics != null) {
+            catalogMetrics.onProductDetail();
+        }
+
         return ResponseEntity.ok(Map.of("item", toSummary(product)));
     }
 
@@ -74,6 +92,11 @@ public class AdminProductController {
     public ResponseEntity<?> create(@Valid @RequestBody AdminProductRequest request) {
         Product created = adminProductService.createProduct(request);
         logger.info("Created product id={} slug={}", created.getId(), created.getSlug());
+
+        if (catalogMetrics != null) {
+            catalogMetrics.onProductCreated();
+        }
+
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(Map.of("item", toSummary(created)));
     }
@@ -99,6 +122,11 @@ public class AdminProductController {
                 updated.getStockQuantity(),
                 updated.isActive()
         );
+
+        if (catalogMetrics != null) {
+            catalogMetrics.onProductUpdated();
+        }
+
         return ResponseEntity.ok(Map.of("item", toSummary(updated)));
     }
 
@@ -125,6 +153,10 @@ public class AdminProductController {
         Product updated = adminProductService.updateStatus(id, active);
         logger.info("Updated product status id={} active={}", id, active);
 
+        if (catalogMetrics != null) {
+            catalogMetrics.onProductUpdated();
+        }
+
         return ResponseEntity.ok(Map.of(
                 "id", updated.getId(),
                 "active", updated.isActive()
@@ -138,13 +170,17 @@ public class AdminProductController {
     public ResponseEntity<?> delete(@PathVariable Long id) {
         adminProductService.deleteProduct(id);
         logger.info("Deleted product id={}", id);
-        return ResponseEntity.noContent().build(); // 204
+
+        if (catalogMetrics != null) {
+            catalogMetrics.onProductDeleted();
+        }
+
+        return ResponseEntity.noContent().build();
     }
 
     // ---------- Helpers ----------
 
     private Map<String, Object> toSummary(Product p) {
-        // Use a LinkedHashMap to preserve insertion order and allow nulls
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", p.getId());
         map.put("slug", p.getSlug());

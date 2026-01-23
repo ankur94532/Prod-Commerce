@@ -6,10 +6,15 @@ import com.gocommerce.orders.dto.OrderDtos.OrderItemResponse;
 import com.gocommerce.orders.dto.OrderDtos.OrderResponse;
 import com.gocommerce.orders.events.OrderCreatedEvent;
 import com.gocommerce.orders.events.OrderEventsProducer;
+import com.gocommerce.orders.metrics.OrderMetrics;
 import com.gocommerce.orders.model.Order;
 import com.gocommerce.orders.model.OrderItem;
 import com.gocommerce.orders.model.OrderStatus;
+import com.gocommerce.orders.payment.PaymentChargeRequest;
+import com.gocommerce.orders.payment.PaymentProvider;
+import com.gocommerce.orders.payment.PaymentResult;
 import com.gocommerce.orders.repository.OrderRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,12 +25,25 @@ import java.util.List;
 public class OrderService {
 
     private final OrderRepository orderRepository;
-    private final OrderEventsProducer orderEventsProducer; // 👈 NEW
+    private final OrderEventsProducer orderEventsProducer;
+    private final OrderMetrics orderMetrics;
+    private final PaymentProvider paymentProvider;
 
+    @Autowired
     public OrderService(OrderRepository orderRepository,
-                        OrderEventsProducer orderEventsProducer) {
+                        OrderEventsProducer orderEventsProducer,
+                        OrderMetrics orderMetrics,
+                        PaymentProvider paymentProvider) {
         this.orderRepository = orderRepository;
         this.orderEventsProducer = orderEventsProducer;
+        this.orderMetrics = orderMetrics;
+        this.paymentProvider = paymentProvider;
+    }
+
+    // kept for existing tests (2-arg ctor)
+    public OrderService(OrderRepository orderRepository,
+                        OrderEventsProducer orderEventsProducer) {
+        this(orderRepository, orderEventsProducer, null, req -> PaymentResult.success("test", "test-tx"));
     }
 
     @Transactional
@@ -34,9 +52,33 @@ public class OrderService {
                 .map(i -> i.unitPrice().multiply(BigDecimal.valueOf(i.quantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        if (orderMetrics != null) {
+            orderMetrics.onOrderCreated();
+            orderMetrics.recordOrderValue(total);
+        }
+
+        // ---------- Mock Stripe payment before persisting order ----------
+        if (paymentProvider != null) {
+            String cardNumber = request.payment() != null ? request.payment().cardNumber() : null;
+
+            PaymentChargeRequest chargeRequest = new PaymentChargeRequest(
+                    total,
+                    "INR", // hardcoded for now; could be field later
+                    cardNumber,
+                    "Order for user " + request.userId()
+            );
+
+            PaymentResult result = paymentProvider.charge(chargeRequest);
+            if (!result.success()) {
+                // In real life you'd have a proper error type + 402 mapping. For now:
+                throw new IllegalStateException("Payment failed: " + result.failureReason());
+            }
+        }
+
+        // ---------- Create and save order ----------
         Order order = new Order(
                 request.userId(),
-                OrderStatus.PAID, // for now assume paid; later integrate payments
+                OrderStatus.PAID,
                 total
         );
 
@@ -52,7 +94,6 @@ public class OrderService {
 
         Order saved = orderRepository.save(order);
 
-        // 👇 Build and publish Kafka event AFTER successful save
         OrderCreatedEvent event = new OrderCreatedEvent(
                 saved.getId().toString(),
                 saved.getUserId(),
@@ -68,6 +109,10 @@ public class OrderService {
                         .toList()
         );
         orderEventsProducer.publishOrderCreated(event);
+
+        if (orderMetrics != null) {
+            orderMetrics.onOrderCompleted();
+        }
 
         return toResponse(saved);
     }
@@ -93,12 +138,12 @@ public class OrderService {
                 .toList();
 
         return new OrderResponse(
-            order.getId(),
-            order.getUserId(),
-            order.getStatus().name(),
-            order.getTotalAmount(),
-            order.getCreatedAt(),
-            itemResponses
+                order.getId(),
+                order.getUserId(),
+                order.getStatus().name(),
+                order.getTotalAmount(),
+                order.getCreatedAt(),
+                itemResponses
         );
     }
 }

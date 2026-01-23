@@ -2,7 +2,10 @@ package com.gocommerce.recommendation.web;
 
 import com.gocommerce.recommendation.dto.RecommendationDtos.TrendingResponse;
 import com.gocommerce.recommendation.service.RecommendationService;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/recommendations")
@@ -25,7 +28,7 @@ public class RecommendationController {
             @RequestParam(name = "limit", required = false, defaultValue = "5") int limit
     ) {
         if (limit <= 0) limit = 5;
-        if (limit > 20) limit = 20; // basic sanity cap
+        if (limit > 20) limit = 20;
 
         return recommendationService.getTrending(limit);
     }

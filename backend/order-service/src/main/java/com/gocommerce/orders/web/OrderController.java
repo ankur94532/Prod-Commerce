@@ -73,7 +73,12 @@ public class OrderController {
         }
 
         // ✅ Always use ID from JWT / Authentication, never trust the body
-        CreateOrderRequest secureRequest = new CreateOrderRequest(authUserId, request.items());
+        // also pass through payment details from the request (mock Stripe)
+        CreateOrderRequest secureRequest = new CreateOrderRequest(
+                authUserId,
+                request.items(),
+                request.payment()
+        );
 
         return orderService.createOrder(secureRequest);
     }

@@ -74,7 +74,9 @@ class SearchServiceTest {
                 new BigDecimal("99999"),
                 "INR",
                 List.of("gaming", "laptop"),
-                "https://example.com/gaming.jpg");
+                "https://example.com/gaming.jpg",
+                42L          // new popularityScore argument
+        );
 
         Page<ProductDocument> page = new PageImpl<>(
                 List.of(doc),

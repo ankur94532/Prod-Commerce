@@ -25,7 +25,7 @@ function getAuthHeaders() {
 
 // Create an order from current cart snapshot
 // POST /api/v1/orders
-export async function createOrder({ userId, items }) {
+export async function createOrder({ userId, items, payment }) {
   const safeItems = Array.isArray(items) ? items : [];
 
   const payload = {
@@ -36,6 +36,14 @@ export async function createOrder({ userId, items }) {
       quantity: item.quantity,
       unitPrice: item.price,
     })),
+    // mock "Stripe" payment payload – must match backend DTO
+    payment: payment
+      ? {
+          cardNumber: payment.cardNumber,
+          cardExpiry: payment.cardExpiry,
+          cardCvc: payment.cardCvc,
+        }
+      : null,
   };
 
   const res = await ordersApi.post("/orders", payload, {

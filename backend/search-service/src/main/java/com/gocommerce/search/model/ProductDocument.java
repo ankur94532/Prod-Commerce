@@ -35,10 +35,14 @@ public class ProductDocument {
     @Field(type = FieldType.Keyword)
     private String thumbnailUrl;
 
-    // getters/setters, constructors
+    // NEW: numeric popularity score used in function_score
+    @Field(type = FieldType.Long)
+    private Long popularityScore;
 
-    public ProductDocument() {}
+    public ProductDocument() {
+    }
 
+    // old ctor now delegates, keeping old call sites working
     public ProductDocument(String id,
                            String slug,
                            String name,
@@ -47,6 +51,19 @@ public class ProductDocument {
                            String currency,
                            List<String> tags,
                            String thumbnailUrl) {
+        this(id, slug, name, category, price, currency, tags, thumbnailUrl, 0L);
+    }
+
+    // new ctor with popularityScore
+    public ProductDocument(String id,
+                           String slug,
+                           String name,
+                           String category,
+                           BigDecimal price,
+                           String currency,
+                           List<String> tags,
+                           String thumbnailUrl,
+                           Long popularityScore) {
         this.id = id;
         this.slug = slug;
         this.name = name;
@@ -55,6 +72,7 @@ public class ProductDocument {
         this.currency = currency;
         this.tags = tags;
         this.thumbnailUrl = thumbnailUrl;
+        this.popularityScore = popularityScore != null ? popularityScore : 0L;
     }
 
     public String getId() { return id; }
@@ -80,4 +98,9 @@ public class ProductDocument {
 
     public String getThumbnailUrl() { return thumbnailUrl; }
     public void setThumbnailUrl(String thumbnailUrl) { this.thumbnailUrl = thumbnailUrl; }
+
+    public Long getPopularityScore() { return popularityScore; }
+    public void setPopularityScore(Long popularityScore) {
+        this.popularityScore = popularityScore != null ? popularityScore : 0L;
+    }
 }

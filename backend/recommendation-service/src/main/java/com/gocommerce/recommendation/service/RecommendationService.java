@@ -2,12 +2,15 @@ package com.gocommerce.recommendation.service;
 
 import com.gocommerce.recommendation.dto.RecommendationDtos.TrendingProduct;
 import com.gocommerce.recommendation.dto.RecommendationDtos.TrendingResponse;
+import com.gocommerce.recommendation.dto.PopularityDtos.PopularityItem;
+import com.gocommerce.recommendation.dto.PopularityDtos.PopularityResponse;
 import com.gocommerce.recommendation.events.OrderCreatedEvent;
+import com.gocommerce.recommendation.metrics.RecommendationMetrics;
 import com.gocommerce.recommendation.model.ProductStats;
 import com.gocommerce.recommendation.repository.ProductStatsRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import org.springframework.beans.factory.annotation.Autowired;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -15,9 +18,17 @@ import java.util.List;
 public class RecommendationService {
 
     private final ProductStatsRepository productStatsRepository;
-
-    public RecommendationService(ProductStatsRepository productStatsRepository) {
+    private final RecommendationMetrics recommendationMetrics;
+    @Autowired
+    public RecommendationService(ProductStatsRepository productStatsRepository,
+                                 RecommendationMetrics recommendationMetrics) {
         this.productStatsRepository = productStatsRepository;
+        this.recommendationMetrics = recommendationMetrics;
+    }
+
+    // For tests that only pass the repository
+    public RecommendationService(ProductStatsRepository productStatsRepository) {
+        this(productStatsRepository, null);
     }
 
     @Transactional
@@ -41,11 +52,34 @@ public class RecommendationService {
 
             productStatsRepository.save(stats);
         }
+
+        if (recommendationMetrics != null) {
+            recommendationMetrics.onOrderEventProcessed();
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public PopularityResponse getPopularity(int limit) {
+        if (limit <= 0) limit = 10;
+        if (limit > 1000) limit = 1000;
+
+        List<ProductStats> stats = productStatsRepository
+                .findTop1000ByOrderByTotalQuantityDesc();
+
+        List<PopularityItem> items = stats.stream()
+                .limit(limit)
+                .map(ps -> new PopularityItem(
+                        ps.getProductId(),
+                        ps.getTotalQuantity(),
+                        ps.getTotalRevenue()
+                ))
+                .toList();
+
+        return new PopularityResponse(items);
     }
 
     @Transactional(readOnly = true)
     public TrendingResponse getTrending(int limit) {
-        // simple: DB query top 10, then trim in memory if caller wants less
         List<ProductStats> all = productStatsRepository.findTop10ByOrderByTotalQuantityDesc();
 
         List<TrendingProduct> items = all.stream()
@@ -57,6 +91,10 @@ public class RecommendationService {
                         ps.getTotalRevenue()
                 ))
                 .toList();
+
+        if (recommendationMetrics != null) {
+            recommendationMetrics.onTrendingRequested();
+        }
 
         return new TrendingResponse(items);
     }

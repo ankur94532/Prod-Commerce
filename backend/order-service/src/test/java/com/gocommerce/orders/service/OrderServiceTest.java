@@ -3,6 +3,7 @@ package com.gocommerce.orders.service;
 import com.gocommerce.orders.dto.OrderDtos.CreateOrderItemRequest;
 import com.gocommerce.orders.dto.OrderDtos.CreateOrderRequest;
 import com.gocommerce.orders.dto.OrderDtos.OrderResponse;
+import com.gocommerce.orders.dto.OrderDtos.PaymentDetails;
 import com.gocommerce.orders.events.OrderCreatedEvent;
 import com.gocommerce.orders.events.OrderEventsProducer;
 import com.gocommerce.orders.model.Order;
@@ -37,6 +38,7 @@ class OrderServiceTest {
 
     @BeforeEach
     void setUp() {
+        // uses the 2-arg ctor that delegates to the full one (metrics/payment/etc. can be null)
         orderService = new OrderService(orderRepository, orderEventsProducer);
     }
 
@@ -48,9 +50,16 @@ class OrderServiceTest {
         CreateOrderItemRequest item2 = new CreateOrderItemRequest(
                 "p2", "Product 2", 1, new BigDecimal("50.00"));
 
+        PaymentDetails payment = new PaymentDetails(
+                "4242424242424242",
+                "12/30",
+                "123"
+        );
+
         CreateOrderRequest request = new CreateOrderRequest(
                 "user-123",
-                List.of(item1, item2)
+                List.of(item1, item2),
+                payment
         );
 
         // repository will assign an id

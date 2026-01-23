@@ -65,8 +65,15 @@ export default function Home() {
             </Link>
           </div>
         </div>
-        <div className="w-full sm:w-64 h-40 sm:h-48 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 text-xs">
-          GoCommerce Demo
+
+        {/* 🔁 Replaced gray placeholder with real image */}
+        <div className="w-full sm:w-64 h-40 sm:h-48">
+          <img
+            src="https://media.licdn.com/dms/image/v2/C560BAQEVmHLki5EcYQ/company-logo_200_200/company-logo_200_200/0/1630668766422/navco_ecommerce_logo?e=2147483647&v=beta&t=fBCZRMJknbj9i8xx_PDUYaZ_G4msujsSPJBHL1Ip4tM"
+            alt="GoCommerce hero"
+            className="w-full h-full rounded-xl object-cover shadow-sm"
+            loading="lazy"
+          />
         </div>
       </section>
 

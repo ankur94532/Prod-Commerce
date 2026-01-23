@@ -6,6 +6,7 @@
 /Users/shashwattripathi/Downloads/ecommerce-platform/backend/auth-service/src/main/java/com/gocommerce/auth/dto/RegisterRequest.java
 /Users/shashwattripathi/Downloads/ecommerce-platform/backend/auth-service/src/main/java/com/gocommerce/auth/dto/UserResponse.java
 /Users/shashwattripathi/Downloads/ecommerce-platform/backend/auth-service/src/main/java/com/gocommerce/auth/entity/User.java
+/Users/shashwattripathi/Downloads/ecommerce-platform/backend/auth-service/src/main/java/com/gocommerce/auth/metrics/AuthMetrics.java
 /Users/shashwattripathi/Downloads/ecommerce-platform/backend/auth-service/src/main/java/com/gocommerce/auth/model/Role.java
 /Users/shashwattripathi/Downloads/ecommerce-platform/backend/auth-service/src/main/java/com/gocommerce/auth/repository/UserRepository.java
 /Users/shashwattripathi/Downloads/ecommerce-platform/backend/auth-service/src/main/java/com/gocommerce/auth/security/CustomUserDetailsService.java

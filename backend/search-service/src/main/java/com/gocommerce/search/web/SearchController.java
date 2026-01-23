@@ -6,6 +6,8 @@ import com.gocommerce.search.service.SearchService;
 import org.springframework.web.bind.annotation.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.ResponseEntity;
+
 import java.util.Map;
 
 @RestController
@@ -39,5 +41,19 @@ public class SearchController {
     public Map<String, Object> reindex() {
         int indexed = searchService.reindexProducts();
         return Map.of("indexed", indexed);
+    }
+
+    // 🔹 NEW: index a single product (called from catalog-service)
+    @PostMapping("/index-product")
+    public ResponseEntity<Map<String, Object>> indexProduct(@RequestBody Map<String, Object> payload) {
+        searchService.indexProductFromPayload(payload);
+        return ResponseEntity.ok(Map.of("id", payload.get("id")));
+    }
+
+    // 🔹 NEW: remove single product from index
+    @DeleteMapping("/products/{id}")
+    public ResponseEntity<Void> deleteProduct(@PathVariable String id) {
+        searchService.deleteProductFromIndex(id);
+        return ResponseEntity.noContent().build();
     }
 }

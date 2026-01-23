@@ -1,10 +1,11 @@
-// src/main/java/com/gocommerce/catalog/service/AdminProductService.java
 package com.gocommerce.catalog.service;
 
+import com.gocommerce.catalog.client.SearchIndexClient;
 import com.gocommerce.catalog.dto.AdminProductRequest;
 import com.gocommerce.catalog.entity.Product;
 import com.gocommerce.catalog.repository.ProductRepository;
 import jakarta.persistence.EntityNotFoundException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -18,9 +19,18 @@ import java.util.Map;
 public class AdminProductService {
 
     private final ProductRepository productRepository;
+    private final SearchIndexClient searchIndexClient;
 
-    public AdminProductService(ProductRepository productRepository) {
+    @Autowired
+    public AdminProductService(ProductRepository productRepository,
+                               SearchIndexClient searchIndexClient) {
         this.productRepository = productRepository;
+        this.searchIndexClient = searchIndexClient;
+    }
+
+    // Kept for tests that only pass repository (no search client)
+    public AdminProductService(ProductRepository productRepository) {
+        this(productRepository, null);
     }
 
     public Page<Product> listProducts(Pageable pageable) {
@@ -54,7 +64,15 @@ public class AdminProductService {
                 dto.getActive() != null ? dto.getActive() : true,
                 attributes
         );
-        return productRepository.save(product);
+
+        Product saved = productRepository.save(product);
+
+        // 🔁 Index in Elasticsearch via search-service
+        if (searchIndexClient != null) {
+            searchIndexClient.indexProduct(saved);
+        }
+
+        return saved;
     }
 
     public Product updateProduct(Long id, AdminProductRequest dto) {
@@ -84,18 +102,37 @@ public class AdminProductService {
                 : new HashMap<>();
         product.setAttributes(attributes);
 
-        return productRepository.save(product);
+        Product updated = productRepository.save(product);
+
+        // 🔁 Re-index updated doc as well
+        if (searchIndexClient != null) {
+            searchIndexClient.indexProduct(updated);
+        }
+
+        return updated;
     }
 
     public Product updateStatus(Long id, boolean active) {
         Product product = getProduct(id);
         product.setActive(active);
-        return productRepository.save(product);
+        Product updated = productRepository.save(product);
+
+        // We still index updated status so search sees active/inactive if you later filter on it.
+        if (searchIndexClient != null) {
+            searchIndexClient.indexProduct(updated);
+        }
+
+        return updated;
     }
 
     // NEW: hard delete
     public void deleteProduct(Long id) {
         Product product = getProduct(id);
         productRepository.delete(product);
+
+        // Remove from index as well
+        if (searchIndexClient != null) {
+            searchIndexClient.deleteProduct(id);
+        }
     }
 }

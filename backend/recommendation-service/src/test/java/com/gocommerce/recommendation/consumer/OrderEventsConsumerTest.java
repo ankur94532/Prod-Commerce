@@ -3,27 +3,32 @@ package com.gocommerce.recommendation.consumer;
 import com.gocommerce.recommendation.events.OrderCreatedEvent;
 import com.gocommerce.recommendation.service.RecommendationService;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
 
-import static org.mockito.Mockito.verify;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
-@ExtendWith(MockitoExtension.class)
 class OrderEventsConsumerTest {
 
-    @Mock
-    private RecommendationService recommendationService;
+    private static class RecordingRecommendationService extends RecommendationService {
+        OrderCreatedEvent lastEvent;
 
-    @InjectMocks
-    private OrderEventsConsumer consumer;
+        RecordingRecommendationService() {
+            super(null); // repository not used in this stub
+        }
+
+        @Override
+        public void recordOrder(OrderCreatedEvent event) {
+            this.lastEvent = event;
+        }
+    }
 
     @Test
     void handleOrderCreated_delegatesToService() {
+        RecordingRecommendationService stubService = new RecordingRecommendationService();
+        OrderEventsConsumer consumer = new OrderEventsConsumer(stubService);
+
         OrderCreatedEvent.Line line = new OrderCreatedEvent.Line(
                 "p1",
                 "Product One",
@@ -40,6 +45,7 @@ class OrderEventsConsumerTest {
 
         consumer.handleOrderCreated(event);
 
-        verify(recommendationService).recordOrder(event);
+        // verify delegation by checking the stub was called with the same event
+        assertSame(event, stubService.lastEvent);
     }
 }

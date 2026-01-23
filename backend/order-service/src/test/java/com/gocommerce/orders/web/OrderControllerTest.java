@@ -74,7 +74,12 @@ class OrderControllerTest {
                       "quantity": 2,
                       "unitPrice": 100.00
                     }
-                  ]
+                  ],
+                  "payment": {
+                    "cardNumber": "4242424242424242",
+                    "cardExpiry": "12/30",
+                    "cardCvc": "123"
+                  }
                 }
                 """;
 
@@ -101,7 +106,12 @@ class OrderControllerTest {
                       "quantity": 1,
                       "unitPrice": 100.00
                     }
-                  ]
+                  ],
+                  "payment": {
+                    "cardNumber": "4242424242424242",
+                    "cardExpiry": "12/30",
+                    "cardCvc": "123"
+                  }
                 }
                 """;
 

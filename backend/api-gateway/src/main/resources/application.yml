@@ -52,11 +52,16 @@ spring:
           predicates:
             - Path=/api/v1/cart/**
 
-        # Search
+        # Search (with circuit breaker + fallback)
         - id: search-service
           uri: ${SEARCH_SERVICE_URI:http://localhost:8084}
           predicates:
             - Path=/api/v1/search/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: searchRoute
+                fallbackUri: forward:/fallback/search
 
         - id: order-service
           uri: ${ORDER_SERVICE_URI:http://localhost:8085}
@@ -80,4 +85,7 @@ management:
         include: health,info,prometheus
   metrics:
     tags:
-      application: api-gateway
+      service: api-gateway
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true

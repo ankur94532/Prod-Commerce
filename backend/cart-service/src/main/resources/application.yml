@@ -18,7 +18,10 @@ management:
         include: health,info,prometheus
   metrics:
     tags:
-      application: cart-service
+      service: cart-service
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
 
 security:
   jwt:

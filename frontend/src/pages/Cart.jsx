@@ -2,8 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { getCart, clearCart } from "../api/cart";
-import { createOrder } from "../api/orders";
+import { getCart } from "../api/cart";
 
 function Cart() {
   const { user } = useAuth();
@@ -13,7 +12,6 @@ function Cart() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [placing, setPlacing] = useState(false);
   const [orderError, setOrderError] = useState("");
 
   useEffect(() => {
@@ -45,7 +43,7 @@ function Cart() {
     return () => {
       isMounted = false;
     };
-  }, [user]);
+  }, [user, navigate]);
 
   if (!user) {
     return (
@@ -85,45 +83,13 @@ function Cart() {
     0
   );
 
-  const handlePlaceOrder = async () => {
+  const handleProceedToCheckout = () => {
     setOrderError("");
-
-    // Guard: no items
     if (!items.length) {
       setOrderError("Your cart is empty.");
       return;
     }
-
-    // Guard: somehow lost user (race condition)
-    if (!user) {
-      setOrderError("You need to be logged in to place an order.");
-      navigate("/login", { state: { from: "/cart" } });
-      return;
-    }
-
-    try {
-      setPlacing(true);
-
-      // 1) Create order from current cart items
-      await createOrder({
-        userId: user.id, // must match JWT subject; backend double-checks
-        items,
-      });
-
-      // 2) Clear cart in backend
-      await clearCart(user.id);
-
-      // 3) Clear cart in local state
-      setCart({ userId: user.id, items: [] });
-
-      // 4) Go to orders page
-      navigate("/orders");
-    } catch (e) {
-      console.error(e);
-      setOrderError("Failed to place order. Please try again.");
-    } finally {
-      setPlacing(false);
-    }
+    navigate("/checkout");
   };
 
   return (
@@ -181,10 +147,10 @@ function Cart() {
             </p>
             <button
               className="px-4 py-2 rounded bg-green-600 text-white text-sm disabled:opacity-60"
-              onClick={handlePlaceOrder}
-              disabled={placing || items.length === 0}
+              onClick={handleProceedToCheckout}
+              disabled={items.length === 0}
             >
-              {placing ? "Placing order..." : "Proceed to Checkout"}
+              Proceed to Checkout
             </button>
           </div>
 

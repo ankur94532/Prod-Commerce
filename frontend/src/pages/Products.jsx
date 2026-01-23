@@ -1,7 +1,14 @@
 // src/pages/Products.jsx
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchProducts } from "../api/catalog";
+import { fetchProducts, fetchCategories } from "../api/catalog";
+
+function formatCategoryLabel(slug) {
+  if (!slug) return "";
+  return slug
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
 
 function Products() {
   const [products, setProducts] = useState([]);
@@ -13,14 +20,21 @@ function Products() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
   const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState([]); // 🔹 dynamic categories
 
   const loadProducts = async (page = 0, cat = category) => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetchProducts({ page, size: 12, category: cat || undefined });
-      console.log(res.data);
+      const res = await fetchProducts({
+        page,
+        size: 12,
+        category: cat || undefined,
+      });
+
+      // res is already the page object (from fetchProducts)
       setProducts(res.data);
       setMeta({
         page: res.page,
@@ -37,7 +51,21 @@ function Products() {
   };
 
   useEffect(() => {
+    // load initial products
     loadProducts(0);
+
+    // load categories for dropdown
+    const loadCategories = async () => {
+      try {
+        const list = await fetchCategories(); // ["smartphones", "earbuds", ...]
+        setCategories(list || []);
+      } catch (err) {
+        console.error("Failed to load categories", err);
+        // silently fall back to just "All categories"
+      }
+    };
+
+    loadCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -63,9 +91,11 @@ function Products() {
           className="border rounded px-2 py-1 text-sm"
         >
           <option value="">All categories</option>
-          <option value="smartphones">Smartphones</option>
-          <option value="earbuds">Earbuds</option>
-          {/* later: fetch categories dynamically */}
+          {categories.map((cat) => (
+            <option key={cat} value={cat}>
+              {formatCategoryLabel(cat)}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -108,7 +138,9 @@ function Products() {
               {p.currency} {p.price}
             </p>
             <p className="text-xs text-slate-500 mt-auto">
-              {p.stockQuantity > 0 ? `${p.stockQuantity} in stock` : "Out of stock"}
+              {p.stockQuantity > 0
+                ? `${p.stockQuantity} in stock`
+                : "Out of stock"}
             </p>
           </Link>
         ))}

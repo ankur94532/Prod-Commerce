@@ -11,4 +11,7 @@ public interface ProductStatsRepository extends JpaRepository<ProductStats, Long
     Optional<ProductStats> findByProductId(String productId);
 
     List<ProductStats> findTop10ByOrderByTotalQuantityDesc();
+
+    List<ProductStats> findTop1000ByOrderByTotalQuantityDesc();
+
 }

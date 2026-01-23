@@ -2,6 +2,7 @@ package com.gocommerce.search.service;
 
 import com.gocommerce.search.cache.SearchCache;
 import com.gocommerce.search.client.CatalogClient;
+import com.gocommerce.search.config.CatalogProperties;
 import com.gocommerce.search.model.ProductDocument;
 import com.gocommerce.search.repository.ProductSearchRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,20 +32,39 @@ class SearchServiceReindexTest {
     private SearchCache searchCache;
 
     @Mock
-    private CatalogClient catalogClient;
-
-    @Mock
     private ElasticsearchOperations elasticsearchOperations;
 
     @Mock
     private IndexOperations indexOperations;
 
+    private TestCatalogClient catalogClient;
     private SearchService searchService;
+
+    // Simple stub – no HTTP calls
+    static class TestCatalogClient extends CatalogClient {
+
+        private List<Map<String, Object>> products = List.of();
+
+        TestCatalogClient() {
+            super(null, new CatalogProperties());
+        }
+
+        void setProducts(List<Map<String, Object>> products) {
+            this.products = products;
+        }
+
+        @Override
+        public List<Map<String, Object>> fetchAllProducts() {
+            return products;
+        }
+    }
 
     @BeforeEach
     void setUp() {
         when(elasticsearchOperations.indexOps(ProductDocument.class))
                 .thenReturn(indexOperations);
+
+        catalogClient = new TestCatalogClient();
 
         searchService = new SearchService(
                 productSearchRepository,
@@ -66,7 +86,7 @@ class SearchServiceReindexTest {
         p1.put("currency", "INR");
         p1.put("thumbnailUrl", "https://example.com/s26.jpg");
 
-        when(catalogClient.fetchAllProducts()).thenReturn(List.of(p1));
+        catalogClient.setProducts(List.of(p1));
 
         int count = searchService.reindexProducts();
 
@@ -86,11 +106,10 @@ class SearchServiceReindexTest {
         p1.put("name", "No Id Product");
         p1.put("price", new BigDecimal("1000"));
 
-        when(catalogClient.fetchAllProducts()).thenReturn(List.of(p1));
+        catalogClient.setProducts(List.of(p1));
 
         int count = searchService.reindexProducts();
 
-        // no valid docs -> 0 indexed
         assertEquals(0, count);
         verify(productSearchRepository).saveAll(anyList());
     }

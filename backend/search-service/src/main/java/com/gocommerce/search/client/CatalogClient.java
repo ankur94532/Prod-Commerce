@@ -1,6 +1,7 @@
 package com.gocommerce.search.client;
 
 import com.gocommerce.search.config.CatalogProperties;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpMethod;
@@ -8,7 +9,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -25,6 +25,7 @@ public class CatalogClient {
         this.baseUrl = props.getBaseUrl();
     }
 
+    @CircuitBreaker(name = "catalogClient", fallbackMethod = "fetchAllProductsFallback")
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> fetchAllProducts() {
         String url = baseUrl + "/api/v1/products";
@@ -45,10 +46,8 @@ public class CatalogClient {
             return (List<Map<String, Object>>) (List<?>) list;
         }
 
-        // Case 2: wrapper object (paged or envelope), e.g. { content: [..], items:
-        // [..], ... }
+        // Case 2: wrapper object (paged or envelope), e.g. { content: [..], items: [..], ... }
         if (body instanceof Map<?, ?> map) {
-            // Try common keys first
             Object items = map.get("items");
             if (!(items instanceof List<?>)) {
                 items = map.get("content");
@@ -74,6 +73,12 @@ public class CatalogClient {
         }
 
         log.warn("Catalog /products returned unexpected type: {}", body.getClass());
+        return List.of();
+    }
+
+    @SuppressWarnings("unused")
+    public List<Map<String, Object>> fetchAllProductsFallback(Throwable ex) {
+        log.warn("CatalogClient.fetchAllProducts fallback triggered, returning empty list", ex);
         return List.of();
     }
 }

@@ -36,8 +36,18 @@ management:
         include: health,info,prometheus
   metrics:
     tags:
-      application: order-service
+      service: order-service
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
 
 security:
   jwt:
     secret: "this_is_a_dev_secret_change_later_1234567890"
+
+services:
+  catalog:
+    # In Kubernetes (cluster-internal):
+    base-url: http://catalog-service:8082
+    # For pure local dev with both services via mvn spring-boot:run,
+    # you can override this with: http://localhost:8082

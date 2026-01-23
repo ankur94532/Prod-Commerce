@@ -8,31 +8,80 @@ import org.springframework.data.elasticsearch.repository.ElasticsearchRepository
 
 public interface ProductSearchRepository extends ElasticsearchRepository<ProductDocument, String> {
 
-    // OR search: name matches OR category matches
+    // Relevance-oriented search: phrase + AND, with field boosts
     @Query("""
             {
               "bool": {
                 "should": [
-                  { "match": { "name":    { "query": "?0" } } },
-                  { "match": { "category":{ "query": "?1" } } }
+                  {
+                    "match_phrase": {
+                      "name": {
+                        "query": "?0",
+                        "boost": 5.0
+                      }
+                    }
+                  },
+                  {
+                    "match": {
+                      "name": {
+                        "query": "?0",
+                        "operator": "and",
+                        "boost": 3.0
+                      }
+                    }
+                  },
+                  {
+                    "match": {
+                      "tags": {
+                        "query": "?0",
+                        "operator": "and",
+                        "boost": 2.0
+                      }
+                    }
+                  },
+                  {
+                    "match": {
+                      "category": {
+                        "query": "?1",
+                        "operator": "and",
+                        "boost": 1.0
+                      }
+                    }
+                  }
                 ]
               }
             }
             """)
     Page<ProductDocument> searchByNameOrCategory(
-            String name, String category, Pageable pageable);
+            String name, String category, Pageable pageable
+    );
 
-    // AND search: name matches AND category matches
+    // For explicit category filters (q + category selected on UI)
     @Query("""
             {
               "bool": {
                 "must": [
-                  { "match": { "name":    { "query": "?0" } } },
-                  { "match": { "category":{ "query": "?1" } } }
+                  {
+                    "match": {
+                      "name": {
+                        "query": "?0",
+                        "operator": "and"
+                      }
+                    }
+                  },
+                  {
+                    "match": {
+                      "category": {
+                        "query": "?1",
+                        "operator": "and"
+                      }
+                    }
+                  }
                 ]
               }
             }
             """)
     Page<ProductDocument> searchByNameAndCategory(
-            String name, String category, Pageable pageable);
+            String name, String category, Pageable pageable
+    );
 }

@@ -28,7 +28,7 @@ spec:
             - name: SPRING_ELASTICSEARCH_URIS
               value: "http://host.docker.internal:9200"
 
-            # 🔹 Redis cache (override spring.data.redis.* from application.yml)
+            # Redis cache
             - name: SPRING_DATA_REDIS_HOST
               value: "host.docker.internal"
             - name: SPRING_DATA_REDIS_PORT
@@ -36,14 +36,18 @@ spec:
             - name: SPRING_DATA_REDIS_DATABASE
               value: "2"
 
-            # 🔹 Catalog base-url (override catalog.base-url property)
+            # Catalog base-url (for CatalogClient)
             - name: CATALOG_BASE_URL
               value: "http://catalog-service:8082"
 
-            # JWT secret (same across services)
+            # 🔹 NEW: Recommendation base-url (for RecommendationClient)
+            - name: RECOMMENDATION_BASE_URL
+              value: "http://recommendation-service.gocommerce:8087"
+              # or simply "http://recommendation-service:8087"
+
+            # JWT secret
             - name: SECURITY_JWT_SECRET
               value: "this_is_a_dev_secret_change_later_1234567890"
-
 ---
 apiVersion: v1
 kind: Service

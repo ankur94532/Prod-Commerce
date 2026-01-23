@@ -5,14 +5,17 @@ import com.gocommerce.search.client.CatalogClient;
 import com.gocommerce.search.dto.SearchDtos.SearchRequest;
 import com.gocommerce.search.dto.SearchDtos.SearchResponse;
 import com.gocommerce.search.dto.SearchDtos.SearchResultItem;
+import com.gocommerce.search.metrics.SearchMetrics;
 import com.gocommerce.search.model.ProductDocument;
 import com.gocommerce.search.repository.ProductSearchRepository;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -25,20 +28,32 @@ public class SearchService {
 
     private final ProductSearchRepository productSearchRepository;
     private final SearchCache searchCache;
-
     private final CatalogClient catalogClient;
     private final ElasticsearchOperations elasticsearchOperations;
+    private final SearchMetrics searchMetrics;
 
+    @Autowired
     public SearchService(ProductSearchRepository productSearchRepository,
-            SearchCache searchCache,
-            CatalogClient catalogClient,
-            ElasticsearchOperations elasticsearchOperations) {
+                         SearchCache searchCache,
+                         CatalogClient catalogClient,
+                         ElasticsearchOperations elasticsearchOperations,
+                         SearchMetrics searchMetrics) {
         this.productSearchRepository = productSearchRepository;
         this.searchCache = searchCache;
         this.catalogClient = catalogClient;
         this.elasticsearchOperations = elasticsearchOperations;
+        this.searchMetrics = searchMetrics;
     }
 
+    // overload for tests that were using 4-arg ctor
+    public SearchService(ProductSearchRepository productSearchRepository,
+                         SearchCache searchCache,
+                         CatalogClient catalogClient,
+                         ElasticsearchOperations elasticsearchOperations) {
+        this(productSearchRepository, searchCache, catalogClient, elasticsearchOperations, null);
+    }
+
+    @CircuitBreaker(name = "searchCore", fallbackMethod = "searchFallback")
     public SearchResponse search(SearchRequest request) {
         String query = request.query();
         String categoryFilter = request.category();
@@ -46,18 +61,49 @@ public class SearchService {
         int size = request.size() != null ? request.size() : 20;
 
         if (query == null || query.isBlank()) {
-            // don't cache empty query for now
             return new SearchResponse(List.of(), 0);
         }
 
-        // 1) Cache lookup
-        var normalizedRequest = new SearchRequest(query, categoryFilter, page, size);
+        // normalize for cache key
+        SearchRequest normalizedRequest = new SearchRequest(query, categoryFilter, page, size);
+
         var cached = searchCache.get(normalizedRequest);
         if (cached.isPresent()) {
+            if (searchMetrics != null) {
+                searchMetrics.recordCachedSearch();
+            }
             return cached.get();
         }
 
-        // 2) Elasticsearch query
+        if (searchMetrics != null) {
+            searchMetrics.incrementCacheMiss();
+            return searchMetrics.timeSearch(() -> doSearchAndCache(normalizedRequest));
+        } else {
+            return doSearchAndCache(normalizedRequest);
+        }
+    }
+
+    // Fallback for searchCore CB
+    @SuppressWarnings("unused")
+    public SearchResponse searchFallback(SearchRequest request, Throwable ex) {
+        String q = (request != null ? request.query() : null);
+        String cat = (request != null ? request.category() : null);
+        log.warn("SearchService.search fallback triggered for query='{}', category='{}'",
+                q, cat, ex);
+
+        if (searchMetrics != null) {
+            searchMetrics.incrementZeroResult();
+        }
+
+        return new SearchResponse(List.of(), 0);
+    }
+
+    private SearchResponse doSearchAndCache(SearchRequest normalizedRequest) {
+        String query = normalizedRequest.query();
+        String categoryFilter = normalizedRequest.category();
+        int page = normalizedRequest.page() != null ? normalizedRequest.page() : 0;
+        int size = normalizedRequest.size() != null ? normalizedRequest.size() : 20;
+
         var pageable = PageRequest.of(page, size);
 
         var pageResult = (categoryFilter != null && !categoryFilter.isBlank())
@@ -68,9 +114,11 @@ public class SearchService {
                 .map(this::toResultItem)
                 .toList();
 
-        SearchResponse response = new SearchResponse(items, pageResult.getTotalElements());
+        if (searchMetrics != null && items.isEmpty()) {
+            searchMetrics.incrementZeroResult();
+        }
 
-        // 3) Store in cache
+        SearchResponse response = new SearchResponse(items, pageResult.getTotalElements());
         searchCache.put(normalizedRequest, response);
 
         return response;
@@ -78,28 +126,69 @@ public class SearchService {
 
     /**
      * Recreates the index and reindexes all products from catalog-service.
+     *
+     * IMPORTANT: This method is now "boringly robust":
+     *  - Any exception (catalog down, ES down, etc.) is caught.
+     *  - We log a warning and return 0 instead of propagating 500 to the caller.
      */
     @Transactional
     public int reindexProducts() {
-        var indexOps = elasticsearchOperations.indexOps(ProductDocument.class);
+        try {
+            var indexOps = elasticsearchOperations.indexOps(ProductDocument.class);
 
-        if (indexOps.exists()) {
-            indexOps.delete();
+            if (indexOps.exists()) {
+                indexOps.delete();
+            }
+            indexOps.create();
+            indexOps.putMapping(indexOps.createMapping(ProductDocument.class));
+
+            List<Map<String, Object>> products = catalogClient.fetchAllProducts();
+            List<ProductDocument> docs = products.stream()
+                    .map(this::toDocument)
+                    .filter(d -> d.getId() != null && !d.getId().isBlank())
+                    .toList();
+
+            productSearchRepository.saveAll(docs);
+            indexOps.refresh();
+
+            log.info("Reindexed {} products into Elasticsearch", docs.size());
+
+            if (searchMetrics != null) {
+                searchMetrics.onReindexCompleted(docs.size());
+            }
+
+            return docs.size();
+        } catch (Exception ex) {
+            log.warn("Reindex failed, returning indexed=0 (catalog or ES might be down)", ex);
+            if (searchMetrics != null) {
+                searchMetrics.onReindexCompleted(0);
+            }
+            return 0;
         }
-        indexOps.create();
-        indexOps.putMapping(indexOps.createMapping(ProductDocument.class));
+    }
 
-        List<Map<String, Object>> products = catalogClient.fetchAllProducts();
-        List<ProductDocument> docs = products.stream()
-                .map(this::toDocument)
-                .filter(d -> d.getId() != null && !d.getId().isBlank())
-                .toList();
+    // ---------- single-product index helpers ----------
 
-        productSearchRepository.saveAll(docs);
-        indexOps.refresh();
+    public void indexProductFromPayload(Map<String, Object> productPayload) {
+        ProductDocument doc = toDocument(productPayload);
+        if (doc.getId() == null || doc.getId().isBlank()) {
+            throw new IllegalArgumentException("Product id is required for indexing");
+        }
 
-        log.info("Reindexed {} products into Elasticsearch", docs.size());
-        return docs.size();
+        productSearchRepository.save(doc);
+        elasticsearchOperations.indexOps(ProductDocument.class).refresh();
+
+        log.info("Indexed single product {} into Elasticsearch", doc.getId());
+    }
+
+    public void deleteProductFromIndex(String id) {
+        if (id == null || id.isBlank()) {
+            return;
+        }
+        productSearchRepository.deleteById(id);
+        elasticsearchOperations.indexOps(ProductDocument.class).refresh();
+
+        log.info("Deleted product {} from Elasticsearch index", id);
     }
 
     private SearchResultItem toResultItem(ProductDocument doc) {
@@ -117,28 +206,37 @@ public class SearchService {
 
     private ProductDocument toDocument(Map<String, Object> p) {
         String id = asString(p.get("id"));
-        if (id == null)
+        if (id == null) {
             id = asString(p.get("_id"));
+        }
 
         String name = firstNonBlank(
                 asString(p.get("name")),
-                asString(p.get("title")));
+                asString(p.get("title"))
+        );
 
         String slug = firstNonBlank(
                 asString(p.get("slug")),
-                slugify(name));
+                slugify(name)
+        );
 
         String category = firstNonBlank(
                 asString(p.get("category")),
-                asString(p.get("categoryName")));
+                asString(p.get("categorySlug")),
+                asString(p.get("categoryName"))
+        );
 
         BigDecimal price = asBigDecimal(p.get("price"));
         String currency = firstNonBlank(asString(p.get("currency")), "INR");
 
+        var imageUrls = asStringList(p.get("imageUrls"));
+
         String thumbnailUrl = firstNonBlank(
                 asString(p.get("thumbnailUrl")),
                 asString(p.get("imageUrl")),
-                asString(p.get("image")));
+                asString(p.get("image")),
+                !imageUrls.isEmpty() ? imageUrls.get(0) : null
+        );
 
         List<String> tags = asStringList(p.get("tags"));
 
@@ -150,7 +248,8 @@ public class SearchService {
                 price,
                 currency,
                 tags,
-                thumbnailUrl);
+                thumbnailUrl
+        );
     }
 
     private static String asString(Object o) {
@@ -176,7 +275,6 @@ public class SearchService {
         if (o instanceof List<?> list) {
             return list.stream().map(String::valueOf).toList();
         }
-        // if it's a comma-separated string
         String s = String.valueOf(o);
         if (s.isBlank())
             return List.of();

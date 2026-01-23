@@ -39,7 +39,10 @@ management:
         include: health,info,prometheus
   metrics:
     tags:
-      application: analytics-service
+      service: analytics-service
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
 
 security:
   jwt:

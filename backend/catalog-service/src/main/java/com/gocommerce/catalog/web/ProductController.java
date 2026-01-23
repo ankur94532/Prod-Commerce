@@ -1,6 +1,7 @@
 package com.gocommerce.catalog.web;
 
 import com.gocommerce.catalog.dto.ProductResponse;
+import com.gocommerce.catalog.metrics.CatalogMetrics;
 import com.gocommerce.catalog.service.ProductService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -9,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -16,10 +18,13 @@ import java.util.Map;
 public class ProductController {
 
     private final ProductService productService;
+    private final CatalogMetrics catalogMetrics;
     private static final Logger logger = LoggerFactory.getLogger(ProductController.class);
 
-    public ProductController(ProductService productService) {
+    public ProductController(ProductService productService,
+                             CatalogMetrics catalogMetrics) {
         this.productService = productService;
+        this.catalogMetrics = catalogMetrics;
     }
 
     @GetMapping
@@ -29,6 +34,10 @@ public class ProductController {
             @RequestParam(value = "size", defaultValue = "12") int size) {
         logger.info("Inside listProducts method: category={}, page={}, size={}",
                 categorySlug, page, size);
+
+        // metric: user browsed product list
+        catalogMetrics.onProductList();
+
         Pageable pageable = PageRequest.of(page, size);
         Page<ProductResponse> result = productService.listProducts(categorySlug, pageable);
 
@@ -43,9 +52,15 @@ public class ProductController {
                 result.getTotalElements(), result.getTotalPages());
         return ResponseEntity.ok(body);
     }
-
+    @GetMapping("/categories")
+    public List<String> getCategories() {
+        return productService.getAvailableCategories();
+    }
     @GetMapping("/{slug}")
     public ResponseEntity<?> getProduct(@PathVariable String slug) {
+        // metric: product detail view
+        catalogMetrics.onProductDetail();
+
         ProductResponse product = productService.getBySlug(slug);
         return ResponseEntity.ok(Map.of("data", product));
     }

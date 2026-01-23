@@ -19,7 +19,14 @@ public class OrderDtos {
 
     public record CreateOrderRequest(
             @NotBlank String userId,
-            @NotNull List<CreateOrderItemRequest> items
+            @NotNull List<CreateOrderItemRequest> items,
+            PaymentDetails payment
+    ) {}
+
+    public record PaymentDetails(
+            String cardNumber,
+            String cardExpiry,
+            String cardCvc
     ) {}
 
     public record OrderItemResponse(
