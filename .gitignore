@@ -2,26 +2,27 @@
 backend/**/target/
 **/out/
 **/build/
+*.jar
+*.class
 
 # Node / React
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 
-# IDE stuff
+# IDE
 .idea/
 .vscode/
 *.iml
 
-# OS junk
+# OS
 .DS_Store
 Thumbs.db
 
 # Logs
 *.log
 
-# Env / secrets (if any later)
+# Env / secrets
 .env
 .env.local
-*.jar
-*.class
+k8s/secrets.yaml
