@@ -23,3 +23,5 @@ Thumbs.db
 # Env / secrets (if any later)
 .env
 .env.local
+*.jar
+*.class
