@@ -44,7 +44,7 @@ export default function Home() {
       <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 flex flex-col sm:flex-row gap-6 items-center">
         <div className="flex-1">
           <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-3">
-            Welcome to GoCommerce
+            Welcome to Prod-Commerce
           </h1>
           <p className="text-slate-600 mb-4 text-sm sm:text-base">
             A production-style demo store built with Java Spring Boot
@@ -69,8 +69,8 @@ export default function Home() {
         {/* 🔁 Replaced gray placeholder with real image */}
         <div className="w-full sm:w-64 h-40 sm:h-48">
           <img
-            src="https://media.licdn.com/dms/image/v2/C560BAQEVmHLki5EcYQ/company-logo_200_200/company-logo_200_200/0/1630668766422/navco_ecommerce_logo?e=2147483647&v=beta&t=fBCZRMJknbj9i8xx_PDUYaZ_G4msujsSPJBHL1Ip4tM"
-            alt="GoCommerce hero"
+            src="https://placehold.co/800x600/dbeafe/1e3a8a/png?text=Prod-Commerce"
+            alt="Prod-Commerce hero"
             className="w-full h-full rounded-xl object-cover shadow-sm"
             loading="lazy"
           />

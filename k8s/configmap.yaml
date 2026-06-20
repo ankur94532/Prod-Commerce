@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gocommerce-config
+  namespace: gocommerce
+data:
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  SPRING_DATA_REDIS_HOST: "redis"
+  SPRING_DATA_REDIS_PORT: "6379"
+  SPRING_ELASTICSEARCH_URIS: "http://elasticsearch:9200"
+  AUTH_SERVICE_URI: "http://auth-service:8081"
+  CATALOG_SERVICE_URI: "http://catalog-service:8082"
+  CART_SERVICE_URI: "http://cart-service:8083"
+  SEARCH_SERVICE_URI: "http://search-service:8084"
+  ORDER_SERVICE_URI: "http://order-service:8085"
+  ANALYTICS_SERVICE_URI: "http://analytics-service:8086"
+  RECOMMENDATION_SERVICE_URI: "http://recommendation-service:8087"
+  RECOMMENDATION_BASE_URL: "http://recommendation-service:8087"
+  CATALOG_SERVICE_URL: "http://catalog-service:8082"
+  CATALOG_BASE_URL: "http://catalog-service:8082"
+  SPRING_DATASOURCE_USERNAME: "ecom_user"
+  AUTH_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/ecom_auth"
+  CATALOG_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/ecom_catalog"
+  ORDER_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/ecom_order"
+  ANALYTICS_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/ecom_analytics"
+  RECOMMENDATION_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/ecom_recommendation"

@@ -13,7 +13,7 @@ public class JwtAuthProperties {
     /**
      * Must match the secret used in auth-service so we can verify tokens.
      */
-    private String secret = "change-this-secret-in-prod";
+    private String secret;
 
     public String getSecret() {
         return secret;
@@ -24,6 +24,9 @@ public class JwtAuthProperties {
     }
 
     public SecretKey getSigningKey() {
+        if (secret == null || secret.length() < 32) {
+            throw new IllegalStateException("security.jwt.secret must be configured and at least 32 characters long");
+        }
         return Keys.hmacShaKeyFor(secret.getBytes());
     }
 }

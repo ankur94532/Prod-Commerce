@@ -14,11 +14,14 @@ public class JwtProperties {
     /**
      * Base64 or plain secret. For dev you can keep it simple.
      */
-    private String secret = "change-this-secret-to-something-long-for-dev";
+    private String secret;
     private long accessTokenTtlMinutes = 60; // 1 hour
     private long refreshTokenTtlDays = 30; // 30 days
 
     public SecretKey getSigningKey() {
+        if (secret == null || secret.length() < 32) {
+            throw new IllegalStateException("security.jwt.secret must be configured and at least 32 characters long");
+        }
         return Keys.hmacShaKeyFor(secret.getBytes());
     }
 

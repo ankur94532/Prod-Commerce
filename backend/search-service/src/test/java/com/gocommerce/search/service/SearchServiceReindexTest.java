@@ -96,6 +96,7 @@ class SearchServiceReindexTest {
         verify(indexOperations).create();
         verify(productSearchRepository).saveAll(anyList());
         verify(indexOperations).refresh();
+        verify(searchCache).clear();
     }
 
     @Test
@@ -112,5 +113,6 @@ class SearchServiceReindexTest {
 
         assertEquals(0, count);
         verify(productSearchRepository).saveAll(anyList());
+        verify(searchCache).clear();
     }
 }

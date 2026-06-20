@@ -1,15 +1,17 @@
 package com.gocommerce.orders.service;
 
+import com.gocommerce.orders.client.CatalogClient;
+import com.gocommerce.orders.client.CatalogClient.ProductSnapshot;
 import com.gocommerce.orders.dto.OrderDtos.CreateOrderItemRequest;
 import com.gocommerce.orders.dto.OrderDtos.CreateOrderRequest;
 import com.gocommerce.orders.dto.OrderDtos.OrderItemResponse;
 import com.gocommerce.orders.dto.OrderDtos.OrderResponse;
-import com.gocommerce.orders.events.OrderCreatedEvent;
-import com.gocommerce.orders.events.OrderEventsProducer;
+import com.gocommerce.orders.exception.PaymentFailedException;
 import com.gocommerce.orders.metrics.OrderMetrics;
 import com.gocommerce.orders.model.Order;
 import com.gocommerce.orders.model.OrderItem;
 import com.gocommerce.orders.model.OrderStatus;
+import com.gocommerce.orders.outbox.OrderOutboxService;
 import com.gocommerce.orders.payment.PaymentChargeRequest;
 import com.gocommerce.orders.payment.PaymentProvider;
 import com.gocommerce.orders.payment.PaymentResult;
@@ -19,37 +21,63 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
 public class OrderService {
 
     private final OrderRepository orderRepository;
-    private final OrderEventsProducer orderEventsProducer;
+    private final OrderOutboxService orderOutboxService;
     private final OrderMetrics orderMetrics;
     private final PaymentProvider paymentProvider;
+    private final CatalogClient catalogClient;
 
     @Autowired
     public OrderService(OrderRepository orderRepository,
-                        OrderEventsProducer orderEventsProducer,
+                        OrderOutboxService orderOutboxService,
                         OrderMetrics orderMetrics,
-                        PaymentProvider paymentProvider) {
+                        PaymentProvider paymentProvider,
+                        CatalogClient catalogClient) {
         this.orderRepository = orderRepository;
-        this.orderEventsProducer = orderEventsProducer;
+        this.orderOutboxService = orderOutboxService;
         this.orderMetrics = orderMetrics;
         this.paymentProvider = paymentProvider;
+        this.catalogClient = catalogClient;
     }
 
-    // kept for existing tests (2-arg ctor)
+    /**
+     * Kept for older unit tests. New production code should use the full constructor.
+     */
     public OrderService(OrderRepository orderRepository,
-                        OrderEventsProducer orderEventsProducer) {
-        this(orderRepository, orderEventsProducer, null, req -> PaymentResult.success("test", "test-tx"));
+                        OrderOutboxService orderOutboxService,
+                        CatalogClient catalogClient) {
+        this(orderRepository, orderOutboxService, null, req -> PaymentResult.success("test", "test-tx"), catalogClient);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = PaymentFailedException.class)
     public OrderResponse createOrder(CreateOrderRequest request) {
-        BigDecimal total = request.items().stream()
-                .map(i -> i.unitPrice().multiply(BigDecimal.valueOf(i.quantity())))
+        return createOrder(request, null);
+    }
+
+    @Transactional(noRollbackFor = PaymentFailedException.class)
+    public OrderResponse createOrder(CreateOrderRequest request, String idempotencyKey) {
+        if (request.items() == null || request.items().isEmpty()) {
+            throw new IllegalArgumentException("Order must contain at least one item");
+        }
+
+        String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+        if (normalizedIdempotencyKey != null) {
+            var existing = orderRepository.findByUserIdAndIdempotencyKey(request.userId(), normalizedIdempotencyKey);
+            if (existing.isPresent()) {
+                return toResponse(existing.get());
+            }
+        }
+
+        List<PricedOrderLine> pricedLines = priceFromCatalog(request.items());
+        String currency = validateAndResolveCurrency(pricedLines);
+        BigDecimal total = pricedLines.stream()
+                .map(PricedOrderLine::lineTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         if (orderMetrics != null) {
@@ -57,58 +85,61 @@ public class OrderService {
             orderMetrics.recordOrderValue(total);
         }
 
-        // ---------- Mock Stripe payment before persisting order ----------
+        Order order = new Order(
+                request.userId(),
+                OrderStatus.PENDING_PAYMENT,
+                total,
+                currency,
+                normalizedIdempotencyKey
+        );
+
+        for (PricedOrderLine line : pricedLines) {
+            ProductSnapshot product = line.product();
+            order.addItem(new OrderItem(
+                    product.productId(),
+                    product.productName(),
+                    line.quantity(),
+                    product.unitPrice()
+            ));
+        }
+
+        Order saved = orderRepository.save(order);
+
+        List<PricedOrderLine> decremented = new ArrayList<>();
+        try {
+            for (PricedOrderLine line : pricedLines) {
+                catalogClient.decrementStock(line.product().productId(), line.quantity());
+                decremented.add(line);
+            }
+        } catch (RuntimeException e) {
+            compensateStock(decremented);
+            throw e;
+        }
+
         if (paymentProvider != null) {
             String cardNumber = request.payment() != null ? request.payment().cardNumber() : null;
 
             PaymentChargeRequest chargeRequest = new PaymentChargeRequest(
                     total,
-                    "INR", // hardcoded for now; could be field later
+                    currency,
                     cardNumber,
-                    "Order for user " + request.userId()
+                    "Order " + saved.getId() + " for user " + request.userId()
             );
 
             PaymentResult result = paymentProvider.charge(chargeRequest);
             if (!result.success()) {
-                // In real life you'd have a proper error type + 402 mapping. For now:
-                throw new IllegalStateException("Payment failed: " + result.failureReason());
+                compensateStock(decremented);
+                saved.setStatus(OrderStatus.CANCELLED);
+                orderRepository.save(saved);
+                throw new PaymentFailedException("Payment failed: " + result.failureReason());
             }
+            saved.setPaymentProvider(result.provider());
+            saved.setPaymentTransactionId(result.transactionId());
         }
 
-        // ---------- Create and save order ----------
-        Order order = new Order(
-                request.userId(),
-                OrderStatus.PAID,
-                total
-        );
-
-        for (CreateOrderItemRequest itemReq : request.items()) {
-            OrderItem item = new OrderItem(
-                    itemReq.productId(),
-                    itemReq.productName(),
-                    itemReq.quantity(),
-                    itemReq.unitPrice()
-            );
-            order.addItem(item);
-        }
-
-        Order saved = orderRepository.save(order);
-
-        OrderCreatedEvent event = new OrderCreatedEvent(
-                saved.getId().toString(),
-                saved.getUserId(),
-                saved.getTotalAmount(),
-                saved.getStatus().name(),
-                saved.getItems().stream()
-                        .map(i -> new OrderCreatedEvent.Line(
-                                i.getProductId(),
-                                i.getProductName(),
-                                i.getQuantity(),
-                                i.getUnitPrice()
-                        ))
-                        .toList()
-        );
-        orderEventsProducer.publishOrderCreated(event);
+        saved.setStatus(OrderStatus.PAID);
+        saved = orderRepository.save(saved);
+        orderOutboxService.enqueueOrderCreated(saved);
 
         if (orderMetrics != null) {
             orderMetrics.onOrderCompleted();
@@ -123,6 +154,52 @@ public class OrderService {
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    private List<PricedOrderLine> priceFromCatalog(List<CreateOrderItemRequest> requestItems) {
+        return requestItems.stream()
+                .map(item -> {
+                    ProductSnapshot product = catalogClient.getProductSnapshot(item.productId());
+                    if (product.unitPrice() == null) {
+                        throw new IllegalStateException("Catalog returned null price for product " + item.productId());
+                    }
+                    return new PricedOrderLine(product, item.quantity());
+                })
+                .toList();
+    }
+
+    private String validateAndResolveCurrency(List<PricedOrderLine> pricedLines) {
+        String currency = pricedLines.get(0).product().currency() != null
+                ? pricedLines.get(0).product().currency()
+                : "INR";
+        boolean mixedCurrency = pricedLines.stream()
+                .map(line -> line.product().currency() != null ? line.product().currency() : "INR")
+                .anyMatch(lineCurrency -> !lineCurrency.equals(currency));
+        if (mixedCurrency) {
+            throw new IllegalStateException("Mixed-currency orders are not supported");
+        }
+        return currency;
+    }
+
+    private void compensateStock(List<PricedOrderLine> decremented) {
+        for (PricedOrderLine line : decremented) {
+            try {
+                catalogClient.incrementStock(line.product().productId(), line.quantity());
+            } catch (RuntimeException ignored) {
+                // In production this should emit an alert and compensating-retry task.
+            }
+        }
+    }
+
+    private String normalizeIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return null;
+        }
+        String trimmed = idempotencyKey.trim();
+        if (trimmed.length() > 128) {
+            throw new IllegalArgumentException("Idempotency-Key must be at most 128 characters");
+        }
+        return trimmed;
     }
 
     private OrderResponse toResponse(Order order) {
@@ -145,5 +222,11 @@ public class OrderService {
                 order.getCreatedAt(),
                 itemResponses
         );
+    }
+
+    private record PricedOrderLine(ProductSnapshot product, int quantity) {
+        BigDecimal lineTotal() {
+            return product.unitPrice().multiply(BigDecimal.valueOf(quantity));
+        }
     }
 }

@@ -1,16 +1,23 @@
-import React, { useState } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 
 function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
 
   const isAdmin = user?.role === "ADMIN";
 
   const linkBase =
     "text-sm px-2 py-1 rounded hover:text-blue-600 hover:bg-slate-100";
+
+  useEffect(() => {
+    if (location.pathname !== "/search") return;
+    const params = new URLSearchParams(location.search);
+    setSearchTerm(params.get("q") || "");
+  }, [location.pathname, location.search]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -24,7 +31,7 @@ function Navbar() {
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
         {/* Brand */}
         <Link to="/" className="text-xl font-bold text-slate-900">
-          GoCommerce
+          Prod-Commerce
         </Link>
 
         {/* Middle: nav links + search */}

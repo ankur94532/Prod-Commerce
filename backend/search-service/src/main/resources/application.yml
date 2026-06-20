@@ -1,33 +1,38 @@
 server:
-  port: 8084
+  port: ${SERVER_PORT:8084}
 
 spring:
   application:
     name: search-service
 
   elasticsearch:
-    uris: http://localhost:9200
+    uris: ${SPRING_ELASTICSEARCH_URIS:http://localhost:9200}
 
   data:
     redis:
-      host: localhost
-      port: 6379
-      database: 2
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      database: ${SPRING_DATA_REDIS_DATABASE:2}
 
 catalog:
-  base-url: http://localhost:8082
+  base-url: ${CATALOG_BASE_URL:http://localhost:8082}
+
+recommendation:
+  base-url: ${RECOMMENDATION_BASE_URL:http://localhost:8087}
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics  # expose metrics too
+        include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: always                       # show CB details in /actuator/health
+      show-details: always
+      probes:
+        enabled: true
   health:
     circuitbreakers:
-      enabled: true                              # enable resilience4j health contributors
+      enabled: true
   metrics:
     tags:
       service: search-service
@@ -56,7 +61,7 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 5
         automatic-transition-from-open-to-half-open-enabled: true
 
-      reindexJob:                                # used by @CircuitBreaker on reindexProducts()
+      reindexJob:
         register-health-indicator: true
         sliding-window-type: COUNT_BASED
         sliding-window-size: 20

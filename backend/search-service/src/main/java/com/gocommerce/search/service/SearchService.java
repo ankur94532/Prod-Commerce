@@ -8,18 +8,28 @@ import com.gocommerce.search.dto.SearchDtos.SearchResultItem;
 import com.gocommerce.search.metrics.SearchMetrics;
 import com.gocommerce.search.model.ProductDocument;
 import com.gocommerce.search.repository.ProductSearchRepository;
+import co.elastic.clients.elasticsearch._types.SortOptions;
+import co.elastic.clients.elasticsearch._types.SortOrder;
+import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import co.elastic.clients.json.JsonData;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.SearchHit;
+import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.StringJoiner;
 
 @Service
 public class SearchService {
@@ -57,15 +67,30 @@ public class SearchService {
     public SearchResponse search(SearchRequest request) {
         String query = request.query();
         String categoryFilter = request.category();
-        int page = request.page() != null ? request.page() : 0;
-        int size = request.size() != null ? request.size() : 20;
+        int page = request.page() != null ? Math.max(request.page(), 0) : 0;
+        int size = request.size() != null ? Math.max(1, Math.min(request.size(), 100)) : 20;
 
         if (query == null || query.isBlank()) {
             return new SearchResponse(List.of(), 0);
         }
 
         // normalize for cache key
-        SearchRequest normalizedRequest = new SearchRequest(query, categoryFilter, page, size);
+        SearchRequest normalizedRequest = new SearchRequest(
+                query.trim(),
+                normalized(categoryFilter),
+                normalized(request.brand()),
+                request.minPrice(),
+                request.maxPrice(),
+                request.inStock(),
+                normalized(request.color()),
+                normalized(request.type()),
+                normalized(request.fit()),
+                normalized(request.storage()),
+                normalized(request.memory()),
+                normalized(request.material()),
+                normalized(request.sort()),
+                page,
+                size);
 
         var cached = searchCache.get(normalizedRequest);
         if (cached.isPresent()) {
@@ -99,18 +124,24 @@ public class SearchService {
     }
 
     private SearchResponse doSearchAndCache(SearchRequest normalizedRequest) {
-        String query = normalizedRequest.query();
-        String categoryFilter = normalizedRequest.category();
         int page = normalizedRequest.page() != null ? normalizedRequest.page() : 0;
         int size = normalizedRequest.size() != null ? normalizedRequest.size() : 20;
 
-        var pageable = PageRequest.of(page, size);
+        var queryBuilder = NativeQuery.builder()
+                .withQuery(buildSearchQuery(normalizedRequest))
+                .withPageable(PageRequest.of(page, size))
+                .withTrackTotalHits(true);
 
-        var pageResult = (categoryFilter != null && !categoryFilter.isBlank())
-                ? productSearchRepository.searchByNameAndCategory(query, categoryFilter, pageable)
-                : productSearchRepository.searchByNameOrCategory(query, query, pageable);
+        List<SortOptions> sortOptions = sortOptions(normalizedRequest.sort());
+        if (!sortOptions.isEmpty()) {
+            queryBuilder.withSort(sortOptions);
+        }
 
-        List<SearchResultItem> items = pageResult.getContent().stream()
+        SearchHits<ProductDocument> searchHits = elasticsearchOperations.search(
+                queryBuilder.build(), ProductDocument.class);
+
+        List<SearchResultItem> items = searchHits.getSearchHits().stream()
+                .map(SearchHit::getContent)
                 .map(this::toResultItem)
                 .toList();
 
@@ -118,10 +149,116 @@ public class SearchService {
             searchMetrics.incrementZeroResult();
         }
 
-        SearchResponse response = new SearchResponse(items, pageResult.getTotalElements());
+        long total = searchHits.getTotalHits();
+        int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
+        SearchResponse response = new SearchResponse(items, total, page, size, totalPages);
         searchCache.put(normalizedRequest, response);
 
         return response;
+    }
+
+    private Query buildSearchQuery(SearchRequest request) {
+        List<Query> filters = new ArrayList<>();
+        addTermFilter(filters, "category", request.category());
+        addTermFilter(filters, "brand", request.brand());
+        addTermFilter(filters, "color", request.color());
+        addTermFilter(filters, "type", request.type());
+        addTermFilter(filters, "fit", request.fit());
+        addTermFilter(filters, "storage", request.storage());
+        addTermFilter(filters, "memory", request.memory());
+        addTermFilter(filters, "material", request.material());
+        addPriceFilter(filters, request.minPrice(), request.maxPrice());
+        addStockFilter(filters, request.inStock());
+
+        return Query.of(q -> q.bool(b -> {
+            b.must(buildTextQuery(request.query()));
+            if (!filters.isEmpty()) {
+                b.filter(filters);
+            }
+            return b;
+        }));
+    }
+
+    private Query buildTextQuery(String query) {
+        return Query.of(q -> q.bool(b -> b
+                .should(Query.of(s -> s.matchPhrase(mp -> mp
+                        .field("name")
+                        .query(query)
+                        .boost(6.0f))))
+                .should(Query.of(s -> s.match(m -> m
+                        .field("name")
+                        .query(query)
+                        .operator(Operator.And)
+                        .boost(4.0f))))
+                .should(Query.of(s -> s.match(m -> m
+                        .field("description")
+                        .query(query)
+                        .operator(Operator.And)
+                        .boost(2.0f))))
+                .should(Query.of(s -> s.match(m -> m
+                        .field("searchText")
+                        .query(query)
+                        .operator(Operator.And)
+                        .boost(2.0f))))
+                .should(Query.of(s -> s.match(m -> m
+                        .field("searchText")
+                        .query(query)
+                        .operator(Operator.Or)
+                        .boost(1.0f))))
+                .minimumShouldMatch("1")));
+    }
+
+    private void addTermFilter(List<Query> filters, String field, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        filters.add(Query.of(q -> q.term(t -> t
+                .field(field)
+                .value(value)
+                .caseInsensitive(true))));
+    }
+
+    private void addPriceFilter(List<Query> filters, BigDecimal minPrice, BigDecimal maxPrice) {
+        if (minPrice == null && maxPrice == null) {
+            return;
+        }
+        filters.add(Query.of(q -> q.range(r -> {
+            r.field("price");
+            if (minPrice != null) {
+                r.gte(JsonData.of(minPrice));
+            }
+            if (maxPrice != null) {
+                r.lte(JsonData.of(maxPrice));
+            }
+            return r;
+        })));
+    }
+
+    private void addStockFilter(List<Query> filters, Boolean inStock) {
+        if (!Boolean.TRUE.equals(inStock)) {
+            return;
+        }
+        filters.add(Query.of(q -> q.range(r -> r
+                .field("stockQuantity")
+                .gt(JsonData.of(0)))));
+    }
+
+    private List<SortOptions> sortOptions(String sort) {
+        if (sort == null || sort.isBlank() || "relevance".equals(sort)) {
+            return List.of();
+        }
+        return switch (sort) {
+            case "newest" -> List.of(fieldSort("productId", SortOrder.Desc));
+            case "price_asc" -> List.of(fieldSort("price", SortOrder.Asc));
+            case "price_desc" -> List.of(fieldSort("price", SortOrder.Desc));
+            case "name_asc" -> List.of(fieldSort("nameSort", SortOrder.Asc));
+            case "name_desc" -> List.of(fieldSort("nameSort", SortOrder.Desc));
+            default -> List.of();
+        };
+    }
+
+    private SortOptions fieldSort(String field, SortOrder order) {
+        return SortOptions.of(s -> s.field(f -> f.field(field).order(order)));
     }
 
     /**
@@ -150,6 +287,7 @@ public class SearchService {
 
             productSearchRepository.saveAll(docs);
             indexOps.refresh();
+            clearSearchCache();
 
             log.info("Reindexed {} products into Elasticsearch", docs.size());
 
@@ -177,6 +315,7 @@ public class SearchService {
 
         productSearchRepository.save(doc);
         elasticsearchOperations.indexOps(ProductDocument.class).refresh();
+        clearSearchCache();
 
         log.info("Indexed single product {} into Elasticsearch", doc.getId());
     }
@@ -187,8 +326,38 @@ public class SearchService {
         }
         productSearchRepository.deleteById(id);
         elasticsearchOperations.indexOps(ProductDocument.class).refresh();
+        clearSearchCache();
 
         log.info("Deleted product {} from Elasticsearch index", id);
+    }
+
+    public void bootstrapIndexIfEmpty() {
+        try {
+            var indexOps = elasticsearchOperations.indexOps(ProductDocument.class);
+            if (indexOps.exists()) {
+                long existingDocuments = productSearchRepository.count();
+                if (existingDocuments > 0) {
+                    log.info("Search index already contains {} products; skipping startup reindex", existingDocuments);
+                    return;
+                }
+                log.info("Search index exists but is empty; running startup reindex");
+            } else {
+                log.info("Search index does not exist; running startup reindex");
+            }
+
+            int indexed = reindexProducts();
+            log.info("Startup search reindex completed with {} products", indexed);
+        } catch (Exception ex) {
+            log.warn("Startup search index bootstrap failed; continuing with current index state", ex);
+        }
+    }
+
+    private void clearSearchCache() {
+        try {
+            searchCache.clear();
+        } catch (Exception ex) {
+            log.warn("Failed to clear search cache after index mutation", ex);
+        }
     }
 
     private SearchResultItem toResultItem(ProductDocument doc) {
@@ -225,9 +394,12 @@ public class SearchService {
                 asString(p.get("categorySlug")),
                 asString(p.get("categoryName"))
         );
+        String description = asString(p.get("description"));
+        String brand = asString(p.get("brand"));
 
         BigDecimal price = asBigDecimal(p.get("price"));
         String currency = firstNonBlank(asString(p.get("currency")), "INR");
+        Integer stockQuantity = asInteger(p.get("stockQuantity"));
 
         var imageUrls = asStringList(p.get("imageUrls"));
 
@@ -239,16 +411,30 @@ public class SearchService {
         );
 
         List<String> tags = asStringList(p.get("tags"));
+        Map<String, String> attributes = asStringMap(p.get("attributes"));
+        String searchText = buildSearchText(name, description, brand, category, tags, attributes);
 
         return new ProductDocument(
                 id,
                 slug,
                 name,
+                description,
+                brand,
                 category,
+                asLong(id),
                 price,
                 currency,
                 tags,
-                thumbnailUrl
+                thumbnailUrl,
+                stockQuantity,
+                attributes.get("color"),
+                attributes.get("type"),
+                attributes.get("fit"),
+                attributes.get("storage"),
+                attributes.get("memory"),
+                attributes.get("material"),
+                searchText,
+                0L
         );
     }
 
@@ -269,6 +455,28 @@ public class SearchService {
         }
     }
 
+    private static Integer asInteger(Object o) {
+        if (o == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(String.valueOf(o));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static Long asLong(Object o) {
+        if (o == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(String.valueOf(o));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static List<String> asStringList(Object o) {
         if (o == null)
             return List.of();
@@ -279,6 +487,51 @@ public class SearchService {
         if (s.isBlank())
             return List.of();
         return List.of(s.split(",")).stream().map(String::trim).filter(x -> !x.isBlank()).toList();
+    }
+
+    private static Map<String, String> asStringMap(Object o) {
+        if (!(o instanceof Map<?, ?> map)) {
+            return Map.of();
+        }
+        return map.entrySet().stream()
+                .filter(e -> e.getKey() != null && e.getValue() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        e -> String.valueOf(e.getKey()),
+                        e -> String.valueOf(e.getValue()),
+                        (left, right) -> left));
+    }
+
+    private static String buildSearchText(String name,
+                                          String description,
+                                          String brand,
+                                          String category,
+                                          List<String> tags,
+                                          Map<String, String> attributes) {
+        StringJoiner joiner = new StringJoiner(" ");
+        addSearchPart(joiner, name);
+        addSearchPart(joiner, description);
+        addSearchPart(joiner, brand);
+        addSearchPart(joiner, category);
+        if (tags != null) {
+            tags.forEach(tag -> addSearchPart(joiner, tag));
+        }
+        if (attributes != null) {
+            attributes.forEach((key, value) -> {
+                addSearchPart(joiner, key);
+                addSearchPart(joiner, value);
+            });
+        }
+        return joiner.toString();
+    }
+
+    private static void addSearchPart(StringJoiner joiner, String value) {
+        if (value != null && !value.isBlank()) {
+            joiner.add(value);
+        }
+    }
+
+    private static String normalized(String value) {
+        return value != null && !value.isBlank() ? value.trim() : null;
     }
 
     private static String firstNonBlank(String... vals) {

@@ -7,12 +7,15 @@ import com.gocommerce.search.dto.SearchDtos.SearchResultItem;
 import com.gocommerce.search.model.ProductDocument;
 import com.gocommerce.search.repository.ProductSearchRepository;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
+import org.springframework.data.elasticsearch.core.SearchHit;
+import org.springframework.data.elasticsearch.core.SearchHits;
+import org.springframework.data.elasticsearch.core.SearchHitsImpl;
+import org.springframework.data.elasticsearch.core.TotalHitsRelation;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,9 +28,10 @@ class SearchServiceTest {
     void search_returnsCachedResult_whenCacheHit() {
         ProductSearchRepository repo = mock(ProductSearchRepository.class);
         SearchCache cache = mock(SearchCache.class);
+        ElasticsearchOperations elasticsearchOperations = mock(ElasticsearchOperations.class);
 
         // catalogClient + elasticsearchOperations not used in search(), so pass null
-        SearchService service = new SearchService(repo, cache, null, null);
+        SearchService service = new SearchService(repo, cache, null, elasticsearchOperations);
 
         SearchRequest req = new SearchRequest("mac", null, 0, 20);
         SearchResponse cachedResponse = new SearchResponse(
@@ -52,6 +56,7 @@ class SearchServiceTest {
         assertThat(result.items().get(0).id()).isEqualTo("p1");
 
         verifyNoInteractions(repo);
+        verifyNoInteractions(elasticsearchOperations);
         verify(cache, never()).put(any(), any());
     }
 
@@ -59,8 +64,9 @@ class SearchServiceTest {
     void search_hitsRepositoryAndCachesResult_whenCacheMiss() {
         ProductSearchRepository repo = mock(ProductSearchRepository.class);
         SearchCache cache = mock(SearchCache.class);
+        ElasticsearchOperations elasticsearchOperations = mock(ElasticsearchOperations.class);
 
-        SearchService service = new SearchService(repo, cache, null, null);
+        SearchService service = new SearchService(repo, cache, null, elasticsearchOperations);
 
         SearchRequest req = new SearchRequest("laptop", null, 0, 20);
 
@@ -78,15 +84,10 @@ class SearchServiceTest {
                 42L          // new popularityScore argument
         );
 
-        Page<ProductDocument> page = new PageImpl<>(
-                List.of(doc),
-                PageRequest.of(0, 20),
-                1);
-
-        when(repo.searchByNameOrCategory(
-                eq("laptop"),
-                eq("laptop"),
-                any())).thenReturn(page);
+        when(elasticsearchOperations.search(
+                any(org.springframework.data.elasticsearch.core.query.Query.class),
+                eq(ProductDocument.class)))
+                .thenReturn(searchHits(doc, 1));
 
         // Act
         SearchResponse result = service.search(req);
@@ -97,9 +98,36 @@ class SearchServiceTest {
         assertThat(result.items().get(0).id()).isEqualTo("p2");
         assertThat(result.items().get(0).name()).contains("Gaming Laptop");
 
-        verify(repo, times(1))
-                .searchByNameOrCategory(eq("laptop"), eq("laptop"), any());
-
+        verifyNoInteractions(repo);
+        verify(elasticsearchOperations, times(1)).search(
+                any(org.springframework.data.elasticsearch.core.query.Query.class),
+                eq(ProductDocument.class));
         verify(cache, times(1)).put(eq(req), any(SearchResponse.class));
+    }
+
+    private SearchHits<ProductDocument> searchHits(ProductDocument doc, long total) {
+        SearchHit<ProductDocument> hit = new SearchHit<>(
+                "products",
+                doc.getId(),
+                null,
+                1.0f,
+                new Object[0],
+                Map.of(),
+                Map.of(),
+                null,
+                null,
+                List.of(),
+                doc);
+
+        return new SearchHitsImpl<>(
+                total,
+                TotalHitsRelation.EQUAL_TO,
+                1.0f,
+                null,
+                null,
+                List.of(hit),
+                null,
+                null,
+                null);
     }
 }

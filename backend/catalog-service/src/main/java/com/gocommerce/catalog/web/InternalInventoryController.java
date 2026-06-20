@@ -24,4 +24,14 @@ public class InternalInventoryController {
         inventoryService.decrementStock(productId, quantity);
         return ResponseEntity.noContent().build();
     }
+
+    /**
+     * Compensation endpoint used by order-service if payment fails after stock reservation.
+     */
+    @PostMapping("/{productId}/increment")
+    public ResponseEntity<Void> incrementStock(@PathVariable Long productId,
+                                               @RequestParam(name = "quantity", defaultValue = "1") int quantity) {
+        inventoryService.incrementStock(productId, quantity);
+        return ResponseEntity.noContent().build();
+    }
 }

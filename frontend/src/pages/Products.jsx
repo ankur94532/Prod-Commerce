@@ -1,7 +1,7 @@
 // src/pages/Products.jsx
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchProducts, fetchCategories } from "../api/catalog";
+import { fetchProducts, fetchProductFilters } from "../api/catalog";
 
 function formatCategoryLabel(slug) {
   if (!slug) return "";
@@ -10,7 +10,30 @@ function formatCategoryLabel(slug) {
     .replace(/\b\w/g, (ch) => ch.toUpperCase());
 }
 
+const attributeFilterLabels = {
+  color: "Color",
+  type: "Type",
+  fit: "Fit",
+  storage: "Storage",
+  memory: "Memory",
+  material: "Material",
+};
+
 function Products() {
+  const emptyFilters = {
+    category: "",
+    brand: "",
+    minPrice: "",
+    maxPrice: "",
+    inStock: false,
+    color: "",
+    type: "",
+    fit: "",
+    storage: "",
+    memory: "",
+    material: "",
+    sort: "newest",
+  };
   const [products, setProducts] = useState([]);
   const [meta, setMeta] = useState({
     page: 0,
@@ -21,17 +44,47 @@ function Products() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [category, setCategory] = useState("");
-  const [categories, setCategories] = useState([]); // 🔹 dynamic categories
+  const [filters, setFilters] = useState(emptyFilters);
+  const [filterOptions, setFilterOptions] = useState({
+    categories: [],
+    brands: [],
+    price: { min: "", max: "" },
+    attributes: {},
+  });
 
-  const loadProducts = async (page = 0, cat = category) => {
+  const loadFilterOptions = async (category = filters.category) => {
+    try {
+      const options = await fetchProductFilters({ category: category || undefined });
+      setFilterOptions({
+        categories: options.categories || [],
+        brands: options.brands || [],
+        price: options.price || { min: "", max: "" },
+        attributes: options.attributes || {},
+      });
+    } catch (err) {
+      console.error("Failed to load filter options", err);
+    }
+  };
+
+  const loadProducts = async (page = 0, activeFilters = filters) => {
     setLoading(true);
     setError("");
     try {
       const res = await fetchProducts({
         page,
         size: 12,
-        category: cat || undefined,
+        category: activeFilters.category || undefined,
+        brand: activeFilters.brand || undefined,
+        minPrice: activeFilters.minPrice,
+        maxPrice: activeFilters.maxPrice,
+        inStock: activeFilters.inStock,
+        color: activeFilters.color,
+        type: activeFilters.type,
+        fit: activeFilters.fit,
+        storage: activeFilters.storage,
+        memory: activeFilters.memory,
+        material: activeFilters.material,
+        sort: activeFilters.sort,
       });
 
       // res is already the page object (from fetchProducts)
@@ -51,28 +104,30 @@ function Products() {
   };
 
   useEffect(() => {
-    // load initial products
     loadProducts(0);
-
-    // load categories for dropdown
-    const loadCategories = async () => {
-      try {
-        const list = await fetchCategories(); // ["smartphones", "earbuds", ...]
-        setCategories(list || []);
-      } catch (err) {
-        console.error("Failed to load categories", err);
-        // silently fall back to just "All categories"
-      }
-    };
-
-    loadCategories();
+    loadFilterOptions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleCategoryChange = (e) => {
-    const value = e.target.value;
-    setCategory(value);
-    loadProducts(0, value);
+  const handleFilterChange = (name, value) => {
+    const nextFilters = { ...filters, [name]: value };
+    if (name === "category") {
+      nextFilters.color = "";
+      nextFilters.type = "";
+      nextFilters.fit = "";
+      nextFilters.storage = "";
+      nextFilters.memory = "";
+      nextFilters.material = "";
+      loadFilterOptions(value);
+    }
+    setFilters(nextFilters);
+    loadProducts(0, nextFilters);
+  };
+
+  const clearFilters = () => {
+    setFilters(emptyFilters);
+    loadFilterOptions("");
+    loadProducts(0, emptyFilters);
   };
 
   const handlePageChange = (newPage) => {
@@ -82,21 +137,128 @@ function Products() {
 
   return (
     <section className="max-w-6xl mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-4 gap-3">
         <h2 className="text-2xl font-semibold">All Products</h2>
+        <p className="text-sm text-slate-500">{meta.totalElements} items</p>
+      </div>
 
-        <select
-          value={category}
-          onChange={handleCategoryChange}
-          className="border rounded px-2 py-1 text-sm"
-        >
-          <option value="">All categories</option>
-          {categories.map((cat) => (
-            <option key={cat} value={cat}>
-              {formatCategoryLabel(cat)}
-            </option>
-          ))}
-        </select>
+      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            Category
+            <select
+              value={filters.category}
+              onChange={(e) => handleFilterChange("category", e.target.value)}
+              className="border rounded px-2 py-2 text-sm font-normal text-slate-900"
+            >
+              <option value="">All categories</option>
+              {filterOptions.categories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {formatCategoryLabel(cat)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            Brand
+            <select
+              value={filters.brand}
+              onChange={(e) => handleFilterChange("brand", e.target.value)}
+              className="border rounded px-2 py-2 text-sm font-normal text-slate-900"
+            >
+              <option value="">All brands</option>
+              {filterOptions.brands.map((brand) => (
+                <option key={brand} value={brand}>
+                  {brand}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            Min price
+            <input
+              type="number"
+              min={filterOptions.price.min || 0}
+              placeholder={filterOptions.price.min || "0"}
+              value={filters.minPrice}
+              onChange={(e) => handleFilterChange("minPrice", e.target.value)}
+              className="border rounded px-2 py-2 text-sm font-normal text-slate-900"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            Max price
+            <input
+              type="number"
+              min={filterOptions.price.min || 0}
+              placeholder={filterOptions.price.max || "Any"}
+              value={filters.maxPrice}
+              onChange={(e) => handleFilterChange("maxPrice", e.target.value)}
+              className="border rounded px-2 py-2 text-sm font-normal text-slate-900"
+            />
+          </label>
+
+          {Object.entries(attributeFilterLabels).map(([key, label]) => {
+            const values = filterOptions.attributes[key] || [];
+            if (values.length === 0) return null;
+            return (
+              <label
+                key={key}
+                className="flex flex-col gap-1 text-xs font-medium text-slate-600"
+              >
+                {label}
+                <select
+                  value={filters[key]}
+                  onChange={(e) => handleFilterChange(key, e.target.value)}
+                  className="border rounded px-2 py-2 text-sm font-normal text-slate-900"
+                >
+                  <option value="">Any {label.toLowerCase()}</option>
+                  {values.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            );
+          })}
+
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            Sort
+            <select
+              value={filters.sort}
+              onChange={(e) => handleFilterChange("sort", e.target.value)}
+              className="border rounded px-2 py-2 text-sm font-normal text-slate-900"
+            >
+              <option value="newest">Newest</option>
+              <option value="price_asc">Price low to high</option>
+              <option value="price_desc">Price high to low</option>
+              <option value="name_asc">Name A-Z</option>
+              <option value="name_desc">Name Z-A</option>
+            </select>
+          </label>
+
+          <div className="flex items-end gap-3 sm:col-span-2 lg:col-span-1">
+            <label className="flex h-10 items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={filters.inStock}
+                onChange={(e) => handleFilterChange("inStock", e.target.checked)}
+                className="h-4 w-4"
+              />
+              In stock
+            </label>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="h-10 rounded border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
       </div>
 
       {loading && <p className="text-slate-600 mb-4">Loading products...</p>}

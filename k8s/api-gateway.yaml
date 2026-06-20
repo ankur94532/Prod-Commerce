@@ -4,7 +4,7 @@ metadata:
   name: api-gateway
   namespace: gocommerce
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: api-gateway
@@ -18,48 +18,41 @@ spec:
           image: api-gateway:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8080
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: gocommerce-config
+            - secretRef:
+                name: gocommerce-secrets
           env:
-            # Gateway port inside pod
             - name: SERVER_PORT
               value: "8080"
-
-            # Redis for rate limiting → use host.docker.internal (Docker Desktop host)
-            - name: SPRING_DATA_REDIS_HOST
-              value: "host.docker.internal"
-            - name: SPRING_DATA_REDIS_PORT
-              value: "6379"
             - name: SPRING_DATA_REDIS_DATABASE
               value: "0"
-
-            # Downstream service URIs (inside same namespace we can use short service names)
-            - name: AUTH_SERVICE_URI
-              value: "http://auth-service:8081"
-            - name: CATALOG_SERVICE_URI
-              value: "http://catalog-service:8082"
-            - name: CART_SERVICE_URI
-              value: "http://cart-service:8083"
-            - name: SEARCH_SERVICE_URI
-              value: "http://search-service:8084"
-            - name: ORDER_SERVICE_URI
-              value: "http://order-service:8085"
-            - name: ANALYTICS_SERVICE_URI
-              value: "http://analytics-service:8086"
-            - name: RECOMMENDATION_SERVICE_URI
-              value: "http://recommendation-service:8087"
-
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "768Mi"
           readinessProbe:
             httpGet:
-              path: /actuator/health
-              port: 8080
-            initialDelaySeconds: 10
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 15
             periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
           livenessProbe:
             httpGet:
-              path: /actuator/health
-              port: 8080
-            initialDelaySeconds: 30
-            periodSeconds: 30
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 45
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
@@ -67,10 +60,10 @@ metadata:
   name: api-gateway
   namespace: gocommerce
 spec:
+  type: ClusterIP
   selector:
     app: api-gateway
   ports:
     - name: http
       port: 8080
-      targetPort: 8080
-  type: ClusterIP
+      targetPort: http

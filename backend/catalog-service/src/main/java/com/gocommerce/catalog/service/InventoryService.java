@@ -25,4 +25,15 @@ public class InventoryService {
             throw new OutOfStockException(productId, quantity);
         }
     }
+
+    @Transactional
+    public void incrementStock(Long productId, int quantity) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("quantity must be positive");
+        }
+        int updated = productRepository.incrementStock(productId, quantity);
+        if (updated == 0) {
+            throw new IllegalArgumentException("Product not found: " + productId);
+        }
+    }
 }

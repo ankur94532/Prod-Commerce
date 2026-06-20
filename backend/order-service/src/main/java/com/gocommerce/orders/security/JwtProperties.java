@@ -10,9 +10,12 @@ import javax.crypto.SecretKey;
 @ConfigurationProperties(prefix = "security.jwt")
 public class JwtProperties {
 
-    private String secret = "this_is_a_dev_secret_change_later_1234567890";
+    private String secret;
 
     public SecretKey getSigningKey() {
+        if (secret == null || secret.length() < 32) {
+            throw new IllegalStateException("security.jwt.secret must be configured and at least 32 characters long");
+        }
         return Keys.hmacShaKeyFor(secret.getBytes());
     }
 

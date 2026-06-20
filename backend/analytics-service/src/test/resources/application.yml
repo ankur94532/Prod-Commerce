@@ -1,0 +1,6 @@
+security:
+  jwt:
+    secret: test_secret_very_long_123456789012345
+spring:
+  flyway:
+    enabled: false

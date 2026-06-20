@@ -10,4 +10,6 @@ public interface SearchCache {
     Optional<SearchResponse> get(SearchRequest request);
 
     void put(SearchRequest request, SearchResponse response);
+
+    void clear();
 }

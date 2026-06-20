@@ -97,7 +97,7 @@ class SearchCacheRedisTest {
 
         cache.put(req, resp);
 
-        String expectedKey = "search:q=phone|cat=smartphones|p=0|s=20";
+        String expectedKey = "search:q=phone|cat=smartphones|brand=|min=|max=|stock=|color=|type=|fit=|storage=|memory=|material=|sort=|p=0|s=20";
         assertEquals(expectedKey, store.lastKey);
         assertEquals(60L, store.lastTtl);
         assertEquals(TimeUnit.SECONDS, store.lastUnit);
@@ -119,8 +119,7 @@ class SearchCacheRedisTest {
         SearchResponse resp = new SearchResponse(List.of(), 1);
 
         String json = objectMapper.writeValueAsString(resp);
-        // buildKey("phone", null, 0, 20)
-        String key = "search:q=phone|cat=|p=0|s=20";
+        String key = "search:q=phone|cat=|brand=|min=|max=|stock=|color=|type=|fit=|storage=|memory=|material=|sort=|p=0|s=20";
         store.data.put(key, json);
 
         Optional<SearchResponse> result = cache.get(req);

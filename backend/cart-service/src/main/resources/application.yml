@@ -1,5 +1,5 @@
 server:
-  port: 8083
+  port: ${SERVER_PORT:8083}
 
 spring:
   application:
@@ -7,15 +7,19 @@ spring:
 
   data:
     redis:
-      host: localhost
-      port: 6379
-      database: 0
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      database: ${SPRING_DATA_REDIS_DATABASE:0}
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
   metrics:
     tags:
       service: cart-service
@@ -25,4 +29,4 @@ management:
 
 security:
   jwt:
-    secret: "this_is_a_dev_secret_change_later_1234567890"
+    secret: ${SECURITY_JWT_SECRET}

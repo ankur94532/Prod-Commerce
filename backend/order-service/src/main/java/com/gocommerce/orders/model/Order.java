@@ -8,7 +8,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "orders")
+@Table(name = "orders", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_orders_user_id_idempotency_key", columnNames = {"user_id", "idempotency_key"})
+})
 public class Order {
 
     @Id
@@ -16,7 +18,7 @@ public class Order {
     private Long id;
 
     // For now we store userId as String (e.g. email or UUID from auth-service)
-    @Column(nullable = false)
+    @Column(name = "user_id", nullable = false)
     private String userId;
 
     @Enumerated(EnumType.STRING)
@@ -25,6 +27,18 @@ public class Order {
 
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal totalAmount;
+
+    @Column(name = "currency", nullable = false, length = 3)
+    private String currency = "INR";
+
+    @Column(name = "idempotency_key", length = 128)
+    private String idempotencyKey;
+
+    @Column(name = "payment_provider", length = 64)
+    private String paymentProvider;
+
+    @Column(name = "payment_transaction_id", length = 128)
+    private String paymentTransactionId;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
@@ -42,9 +56,15 @@ public class Order {
     public Order() {}
 
     public Order(String userId, OrderStatus status, BigDecimal totalAmount) {
+        this(userId, status, totalAmount, "INR", null);
+    }
+
+    public Order(String userId, OrderStatus status, BigDecimal totalAmount, String currency, String idempotencyKey) {
         this.userId = userId;
         this.status = status;
         this.totalAmount = totalAmount;
+        this.currency = currency != null ? currency : "INR";
+        this.idempotencyKey = idempotencyKey;
     }
 
     @PrePersist
@@ -71,6 +91,18 @@ public class Order {
 
     public BigDecimal getTotalAmount() { return totalAmount; }
     public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
+
+    public String getCurrency() { return currency; }
+    public void setCurrency(String currency) { this.currency = currency; }
+
+    public String getIdempotencyKey() { return idempotencyKey; }
+    public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
+
+    public String getPaymentProvider() { return paymentProvider; }
+    public void setPaymentProvider(String paymentProvider) { this.paymentProvider = paymentProvider; }
+
+    public String getPaymentTransactionId() { return paymentTransactionId; }
+    public void setPaymentTransactionId(String paymentTransactionId) { this.paymentTransactionId = paymentTransactionId; }
 
     public Instant getCreatedAt() { return createdAt; }
 

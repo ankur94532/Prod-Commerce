@@ -62,7 +62,8 @@ public class OrderController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public OrderResponse createOrder(@RequestBody @Valid CreateOrderRequest request) {
+    public OrderResponse createOrder(@RequestBody @Valid CreateOrderRequest request,
+                                     @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         String authUserId = resolveAuthenticatedUserId();
 
         // ❌ Block attempts to create orders for a different user
@@ -80,7 +81,7 @@ public class OrderController {
                 request.payment()
         );
 
-        return orderService.createOrder(secureRequest);
+        return orderService.createOrder(secureRequest, idempotencyKey);
     }
 
     @GetMapping

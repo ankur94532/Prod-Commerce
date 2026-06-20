@@ -10,15 +10,19 @@ import java.util.List;
 
 public class OrderDtos {
 
+    /**
+     * productName/unitPrice are kept only for backward-compatible clients.
+     * Order-service ignores those values and snapshots name/price from catalog-service.
+     */
     public record CreateOrderItemRequest(
             @NotBlank String productId,
-            @NotBlank String productName,
+            String productName,
             @Min(1) int quantity,
-            @NotNull BigDecimal unitPrice
+            BigDecimal unitPrice
     ) {}
 
     public record CreateOrderRequest(
-            @NotBlank String userId,
+            String userId,
             @NotNull List<CreateOrderItemRequest> items,
             PaymentDetails payment
     ) {}

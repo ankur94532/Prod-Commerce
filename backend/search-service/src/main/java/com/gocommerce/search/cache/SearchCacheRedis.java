@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 @Component
@@ -60,12 +61,39 @@ public class SearchCacheRedis implements SearchCache {
         }
     }
 
+    @Override
+    public void clear() {
+        Set<String> keys = redisTemplate.keys("search:*");
+        if (keys == null || keys.isEmpty()) {
+            return;
+        }
+        redisTemplate.delete(keys);
+        log.info("Cleared {} search cache entries", keys.size());
+    }
+
     private String buildKey(SearchRequest request) {
-        String q = request.query() != null ? request.query().trim().toLowerCase() : "";
-        String category = request.category() != null ? request.category().trim().toLowerCase() : "";
+        String q = normalized(request.query());
+        String category = normalized(request.category());
+        String brand = normalized(request.brand());
+        String minPrice = request.minPrice() != null ? request.minPrice().toPlainString() : "";
+        String maxPrice = request.maxPrice() != null ? request.maxPrice().toPlainString() : "";
+        String inStock = request.inStock() != null ? String.valueOf(request.inStock()) : "";
+        String color = normalized(request.color());
+        String type = normalized(request.type());
+        String fit = normalized(request.fit());
+        String storage = normalized(request.storage());
+        String memory = normalized(request.memory());
+        String material = normalized(request.material());
+        String sort = normalized(request.sort());
         int page = request.page() != null ? request.page() : 0;
         int size = request.size() != null ? request.size() : 20;
 
-        return String.format("search:q=%s|cat=%s|p=%d|s=%d", q, category, page, size);
+        return String.format(
+                "search:q=%s|cat=%s|brand=%s|min=%s|max=%s|stock=%s|color=%s|type=%s|fit=%s|storage=%s|memory=%s|material=%s|sort=%s|p=%d|s=%d",
+                q, category, brand, minPrice, maxPrice, inStock, color, type, fit, storage, memory, material, sort, page, size);
+    }
+
+    private String normalized(String value) {
+        return value != null ? value.trim().toLowerCase() : "";
     }
 }

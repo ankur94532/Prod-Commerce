@@ -5,7 +5,7 @@ function Footer() {
   return (
     <footer className="border-t bg-white">
       <div className="max-w-6xl mx-auto px-4 py-4 text-xs text-slate-500 flex justify-between">
-        <span>© {new Date().getFullYear()} GoCommerce</span>
+        <span>© {new Date().getFullYear()} Prod-Commerce</span>
         <span>Built with React & Spring Boot</span>
       </div>
     </footer>
