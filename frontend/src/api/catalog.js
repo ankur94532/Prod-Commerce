@@ -1,8 +1,9 @@
 // src/api/catalog.js
 import axios from "axios";
+import { API_V1_BASE_URL } from "./apiBase";
 
 const catalogApi = axios.create({
-  baseURL: "http://localhost:8080/api/v1",
+  baseURL: API_V1_BASE_URL,
 });
 
 export async function fetchProducts({
@@ -36,9 +37,6 @@ export async function fetchProducts({
   if (sort) params.sort = sort;
 
   const res = await catalogApi.get("/products", { params });
-  console.log("Fetched products:", res.data);
-  // res.data is expected to be the page object:
-  // { data: [...], page, size, totalPages, totalElements }
   return res.data;
 }
 
@@ -47,11 +45,8 @@ export async function fetchProductBySlug(slug) {
   return res.data.data;
 }
 
-// 🔹 NEW: fetch all available categories from backend
 export async function fetchCategories() {
   const res = await catalogApi.get("/products/categories");
-  console.log(res);
-  // expected response: ["smartphones", "earbuds", "refrigerators", ...]
   return res.data;
 }
 

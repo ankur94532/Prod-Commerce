@@ -1,42 +1,20 @@
 // src/api/orders.js
 import axios from "axios";
-
-const BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+import { API_V1_BASE_URL, getAuthHeaders } from "./apiBase";
 
 const ordersApi = axios.create({
-  baseURL: `${BASE_URL}/api/v1`,
+  baseURL: API_V1_BASE_URL,
 });
 
-// Reuse same pattern as cart for JWT
-function getAuthHeaders() {
-  try {
-    const raw = localStorage.getItem("auth");
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    const token =
-      parsed?.tokens?.accessToken || parsed?.accessToken || null;
-    if (!token) return {};
-    return { Authorization: `Bearer ${token}` };
-  } catch {
-    return {};
-  }
-}
-
-// Create an order from current cart snapshot
-// POST /api/v1/orders
-export async function createOrder({ userId, items, payment }) {
+export async function createOrder({ userId, items, payment, idempotencyKey }) {
   const safeItems = Array.isArray(items) ? items : [];
 
   const payload = {
     userId,
     items: safeItems.map((item) => ({
-      productId: item.productId, // matches what order-service expects
-      productName: item.name,
+      productId: item.productId,
       quantity: item.quantity,
-      unitPrice: item.price,
     })),
-    // mock "Stripe" payment payload – must match backend DTO
     payment: payment
       ? {
           cardNumber: payment.cardNumber,
@@ -46,20 +24,20 @@ export async function createOrder({ userId, items, payment }) {
       : null,
   };
 
-  const res = await ordersApi.post("/orders", payload, {
-    headers: getAuthHeaders(),
-  });
+  const headers = getAuthHeaders();
+  if (idempotencyKey) {
+    headers["Idempotency-Key"] = idempotencyKey;
+  }
 
-  return res.data; // OrderResponse from backend
+  const res = await ordersApi.post("/orders", payload, { headers });
+  return res.data;
 }
 
-// Fetch all orders for a user
-// GET /api/v1/orders?userId=...
 export async function fetchOrdersForUser(userId) {
   const res = await ordersApi.get("/orders", {
     params: { userId },
     headers: getAuthHeaders(),
   });
 
-  return res.data; // list<OrderResponse>
+  return res.data;
 }

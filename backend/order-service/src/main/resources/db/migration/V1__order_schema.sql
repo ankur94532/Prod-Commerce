@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS orders (
     total_amount NUMERIC(19, 2) NOT NULL,
     currency VARCHAR(3) NOT NULL DEFAULT 'INR',
     idempotency_key VARCHAR(128),
+    idempotency_request_hash VARCHAR(64),
     payment_provider VARCHAR(64),
     payment_transaction_id VARCHAR(128),
     created_at TIMESTAMPTZ NOT NULL,

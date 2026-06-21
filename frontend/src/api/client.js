@@ -1,24 +1,16 @@
 // src/api/client.js
 import axios from "axios";
+import { API_V1_BASE_URL, getAuthHeaders } from "./apiBase";
 
-// Use API gateway as the single entry point
 const apiClient = axios.create({
-  baseURL: "http://localhost:8080/api/v1",
+  baseURL: API_V1_BASE_URL,
 });
 
-// Attach JWT if present
 apiClient.interceptors.request.use((config) => {
-  try {
-    const raw = localStorage.getItem("auth");
-    if (raw) {
-      const tokens = JSON.parse(raw);
-      if (tokens?.accessToken) {
-        config.headers.Authorization = `Bearer ${tokens.accessToken}`;
-      }
-    }
-  } catch (e) {
-    console.error("Failed to read auth from localStorage", e);
-  }
+  config.headers = {
+    ...(config.headers || {}),
+    ...getAuthHeaders(),
+  };
   return config;
 });
 

@@ -34,6 +34,9 @@ public class Order {
     @Column(name = "idempotency_key", length = 128)
     private String idempotencyKey;
 
+    @Column(name = "idempotency_request_hash", length = 64)
+    private String idempotencyRequestHash;
+
     @Column(name = "payment_provider", length = 64)
     private String paymentProvider;
 
@@ -60,11 +63,16 @@ public class Order {
     }
 
     public Order(String userId, OrderStatus status, BigDecimal totalAmount, String currency, String idempotencyKey) {
+        this(userId, status, totalAmount, currency, idempotencyKey, null);
+    }
+
+    public Order(String userId, OrderStatus status, BigDecimal totalAmount, String currency, String idempotencyKey, String idempotencyRequestHash) {
         this.userId = userId;
         this.status = status;
         this.totalAmount = totalAmount;
         this.currency = currency != null ? currency : "INR";
         this.idempotencyKey = idempotencyKey;
+        this.idempotencyRequestHash = idempotencyRequestHash;
     }
 
     @PrePersist
@@ -97,6 +105,9 @@ public class Order {
 
     public String getIdempotencyKey() { return idempotencyKey; }
     public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
+
+    public String getIdempotencyRequestHash() { return idempotencyRequestHash; }
+    public void setIdempotencyRequestHash(String idempotencyRequestHash) { this.idempotencyRequestHash = idempotencyRequestHash; }
 
     public String getPaymentProvider() { return paymentProvider; }
     public void setPaymentProvider(String paymentProvider) { this.paymentProvider = paymentProvider; }

@@ -47,6 +47,8 @@ management:
 security:
   jwt:
     secret: ${SECURITY_JWT_SECRET}
+  internal:
+    service-token: ${INTERNAL_SERVICE_TOKEN}
 
 resilience4j:
   circuitbreaker:

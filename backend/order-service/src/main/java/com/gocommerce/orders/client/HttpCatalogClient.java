@@ -1,23 +1,30 @@
 package com.gocommerce.orders.client;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-
-import java.math.BigDecimal;
-
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.math.BigDecimal;
+
 @Component
 public class HttpCatalogClient implements CatalogClient {
 
+    private static final String INTERNAL_TOKEN_HEADER = "X-Internal-Service-Token";
+
     private final RestTemplate restTemplate = new RestTemplate();
     private final String baseUrl;
+    private final String internalToken;
 
-    public HttpCatalogClient(@Value("${services.catalog.base-url}") String baseUrl) {
+    public HttpCatalogClient(@Value("${services.catalog.base-url}") String baseUrl,
+                             @Value("${services.catalog.internal-token}") String internalToken) {
         this.baseUrl = baseUrl;
+        this.internalToken = internalToken;
     }
 
     @Override
@@ -27,7 +34,12 @@ public class HttpCatalogClient implements CatalogClient {
                 .buildAndExpand(productId)
                 .toUriString();
 
-        ResponseEntity<CatalogProductResponse> response = restTemplate.getForEntity(url, CatalogProductResponse.class);
+        ResponseEntity<CatalogProductResponse> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                new HttpEntity<>(internalHeaders()),
+                CatalogProductResponse.class
+        );
         if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
             throw new IllegalStateException("Failed to fetch product snapshot for product " + productId);
         }
@@ -53,7 +65,12 @@ public class HttpCatalogClient implements CatalogClient {
                 .buildAndExpand(productId)
                 .toUriString();
 
-        ResponseEntity<Void> response = restTemplate.postForEntity(url, null, Void.class);
+        ResponseEntity<Void> response = restTemplate.exchange(
+                url,
+                HttpMethod.POST,
+                new HttpEntity<>(internalHeaders()),
+                Void.class
+        );
 
         if (!response.getStatusCode().is2xxSuccessful()) {
             throw new IllegalStateException(
@@ -71,7 +88,12 @@ public class HttpCatalogClient implements CatalogClient {
                 .buildAndExpand(productId)
                 .toUriString();
 
-        ResponseEntity<Void> response = restTemplate.postForEntity(url, null, Void.class);
+        ResponseEntity<Void> response = restTemplate.exchange(
+                url,
+                HttpMethod.POST,
+                new HttpEntity<>(internalHeaders()),
+                Void.class
+        );
 
         if (!response.getStatusCode().is2xxSuccessful()) {
             throw new IllegalStateException(
@@ -79,6 +101,15 @@ public class HttpCatalogClient implements CatalogClient {
                             ", status=" + response.getStatusCode()
             );
         }
+    }
+
+    private HttpHeaders internalHeaders() {
+        if (internalToken == null || internalToken.isBlank()) {
+            throw new IllegalStateException("services.catalog.internal-token must be configured");
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(INTERNAL_TOKEN_HEADER, internalToken);
+        return headers;
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

@@ -6,28 +6,32 @@ Production-inspired e-commerce microservices platform built with Java, Spring Bo
 
 | Service | Port | Responsibility |
 |---|---:|---|
-| api-gateway | 8080 | Single entry point, routing, rate limiting |
+| api-gateway | 8080 | Single entry point, routing, Redis-backed rate limiting |
 | auth-service | 8081 | JWT auth, users, admin user APIs |
 | catalog-service | 8082 | Products, catalog browsing, internal inventory APIs |
 | cart-service | 8083 | Redis-backed customer cart |
-| search-service | 8084 | Elasticsearch product search and caching |
+| search-service | 8084 | Elasticsearch keyword/vector/hybrid product search and Redis caching |
 | order-service | 8085 | Checkout, payment orchestration, inventory reservation, idempotency, transactional outbox |
 | analytics-service | 8086 | Kafka consumer for order analytics |
 | recommendation-service | 8087 | Kafka consumer for product recommendation stats |
+| embedding-service | 8090 | Local sentence-transformer embedding API for vector search |
 
 ## Production-readiness improvements
 
 The checkout path has been hardened beyond a basic demo flow:
 
 - order-service no longer trusts client-supplied `productName` or `unitPrice`; it fetches product snapshots from catalog-service.
-- order-service decrements catalog inventory during checkout and compensates stock if payment fails.
-- `POST /api/v1/orders` supports the `Idempotency-Key` header to prevent duplicate orders during client retries.
+- order-service decrements catalog inventory during checkout and compensates stock if payment fails or throws after stock reservation.
+- catalog internal inventory/product snapshot APIs require `X-Internal-Service-Token`.
+- `POST /api/v1/orders` supports the `Idempotency-Key` header and stores a request hash to detect mismatched retries.
 - order events are persisted through a transactional outbox before being published to Kafka.
-- JPA schema generation now uses `ddl-auto: validate`; schema changes are managed through Flyway migrations.
-- JWT secrets and database passwords are read from environment variables/Kubernetes Secrets.
+- outbox polling uses PostgreSQL `FOR UPDATE SKIP LOCKED` so multiple order-service replicas can publish safely.
+- JPA schema generation uses `ddl-auto: validate`; schema changes are managed through Flyway migrations.
+- JWT secrets, internal service token and database passwords are read from environment variables/Kubernetes Secrets.
 - Kubernetes manifests use ConfigMaps, Secrets, readiness/liveness probes, resource requests/limits, ClusterIP services and an ingress entry.
+- GitHub Actions runs backend tests and frontend builds.
 
-## Running local infrastructure
+## Local setup
 
 Create a local env file:
 
@@ -35,10 +39,10 @@ Create a local env file:
 cp .env.example .env
 ```
 
-Update the passwords/secrets in `.env`, then start dependencies:
+Update the passwords/secrets in `.env`, then start infrastructure:
 
 ```bash
-docker compose up -d postgres redis kafka zookeeper elasticsearch prometheus grafana
+docker compose up -d postgres redis zookeeper kafka elasticsearch prometheus grafana
 ```
 
 Start the local embedding service when using vector or hybrid search:
@@ -47,11 +51,33 @@ Start the local embedding service when using vector or hybrid search:
 docker compose up -d embedding-service
 ```
 
-The embedding service loads the local BGE model from `models/bge-small-en-v1.5` and returns 384-dimensional normalized vectors. After starting it, reindex products so Elasticsearch stores real embeddings:
+The embedding service uses `EMBEDDING_MODEL_NAME` and downloads/caches the model if it is not already available locally. The `models/` folder is intentionally ignored because model binaries are large and should not be committed.
+
+After starting catalog, search and embedding services, reindex products so Elasticsearch stores embeddings:
 
 ```bash
 curl -X POST http://localhost:8084/api/v1/search/reindex
 ```
+
+Run each Spring service from its module. Example:
+
+```bash
+cd backend/order-service
+set -a
+source ../../.env
+set +a
+CATALOG_SERVICE_URL=http://localhost:8082 mvn spring-boot:run
+```
+
+Run the frontend:
+
+```bash
+cd frontend
+npm install
+VITE_API_BASE_URL=http://localhost:8080 npm run dev
+```
+
+## Search relevance evaluation
 
 Run the search relevance evaluator against the live API:
 
@@ -63,25 +89,14 @@ python3 backend/search-service/scripts/relevance_eval.py \
   --output-json backend/search-service/scripts/relevance-results.json
 ```
 
-The evaluator generates catalog-aware queries and reports common search metrics:
-`precision@k`, `recall@k`, `hit@k`, `MRR`, `MAP`, and `NDCG@k`.
-Use `--mode text` or `--mode vector` only for hidden/dev comparisons; omit `--mode`
-to test the default hybrid path used by the frontend.
+The evaluator generates catalog-aware queries and reports common search metrics: `precision@k`, `recall@k`, `hit@k`, `MRR`, `MAP`, and `NDCG@k`.
+Use `--mode text` or `--mode vector` only for hidden/dev comparisons; omit `--mode` to test the default hybrid path used by the frontend.
 
 For a faster local/CI smoke gate against running services:
 
 ```bash
 BASE_URL=http://localhost:8080 COUNT=500 FAIL_UNDER=0.95 \
   backend/search-service/scripts/relevance_smoke.sh
-```
-
-Each Spring service can then be run from its module, for example:
-
-```bash
-cd backend/order-service
-SPRING_DATASOURCE_PASSWORD=<your-db-password> \
-SECURITY_JWT_SECRET=<at-least-32-character-secret> \
-mvn spring-boot:run
 ```
 
 ## Kubernetes
@@ -98,3 +113,15 @@ kubectl apply -f k8s/
 ```
 
 The Kubernetes manifests assume Postgres, Kafka, Redis and Elasticsearch are reachable through the service names in `k8s/configmap.yaml`. In a real cloud deployment, point those values to managed services or cluster-internal service DNS.
+
+## Repo hygiene
+
+Do not commit generated folders or large local artifacts:
+
+- `backend/**/target/`
+- `frontend/node_modules/`
+- `frontend/dist/`
+- `.env`
+- `.idea/`
+- `models/`
+- generated search evaluation outputs

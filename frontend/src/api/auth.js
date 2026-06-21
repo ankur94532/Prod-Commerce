@@ -1,8 +1,9 @@
 // src/api/auth.js
 import axios from "axios";
+import { API_V1_BASE_URL } from "./apiBase";
 
 const authApi = axios.create({
-  baseURL: "http://localhost:8080/api/v1/auth", 
+  baseURL: `${API_V1_BASE_URL}/auth`,
 });
 
 export async function registerUser(payload) {
@@ -16,7 +17,6 @@ export async function loginUser(payload) {
 }
 
 export async function fetchCurrentUser(token) {
-  //console.log("Fetching current user with token:", token);
   if (!token) {
     throw new Error("No token provided");
   }

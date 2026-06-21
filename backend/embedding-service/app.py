@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -11,6 +12,7 @@ MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-small-en-v1.5")
 
 app = FastAPI(title="Prod-Commerce Embedding Service")
 model: SentenceTransformer | None = None
+loaded_model_source = MODEL_NAME
 
 
 class EmbeddingRequest(BaseModel):
@@ -26,13 +28,15 @@ class EmbeddingResponse(BaseModel):
 
 @app.on_event("startup")
 def load_model() -> None:
-    global model
-    model = SentenceTransformer(MODEL_PATH)
+    global model, loaded_model_source
+    source = MODEL_PATH if MODEL_PATH and Path(MODEL_PATH).exists() else MODEL_NAME
+    loaded_model_source = source
+    model = SentenceTransformer(source)
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "model": MODEL_NAME}
+    return {"status": "ok", "model": loaded_model_source}
 
 
 @app.post("/api/v1/embeddings")
@@ -53,6 +57,6 @@ def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     return EmbeddingResponse(
         embeddings=embeddings,
         dimensions=dimensions,
-        model=MODEL_NAME,
+        model=loaded_model_source,
         usage={"texts": len(texts)},
     )

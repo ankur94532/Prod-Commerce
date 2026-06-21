@@ -1,12 +1,11 @@
 // src/api/search.js
 import axios from "axios";
+import { API_V1_BASE_URL } from "./apiBase";
 
 const searchApi = axios.create({
-  baseURL: "http://localhost:8080/api/v1",
+  baseURL: API_V1_BASE_URL,
 });
 
-// Calls GET /api/v1/search?q=... without a mode.
-// The backend defaults this to hybrid search; text/vector modes are dev-only API options.
 export async function searchProducts({
   q,
   category,
@@ -39,6 +38,5 @@ export async function searchProducts({
   if (sort) params.sort = sort;
 
   const res = await searchApi.get("/search", { params });
-  // search-service returns plain { items, total } (no .data wrapper)
   return res.data;
 }

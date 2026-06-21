@@ -31,8 +31,7 @@ public class OutboxPublisher {
     @Scheduled(fixedDelayString = "${orders.outbox.publisher-delay-ms:5000}")
     @Transactional
     public void publishDueEvents() {
-        for (OutboxEvent event : outboxEventRepository
-                .findDueForPublishing(Instant.now()).stream().limit(50).toList()) {
+        for (OutboxEvent event : outboxEventRepository.findDueForPublishing(Instant.now(), 50)) {
             if (!OrderOutboxService.ORDER_CREATED.equals(event.getEventType())) {
                 log.warn("Skipping unsupported outbox eventType={} id={}", event.getEventType(), event.getId());
                 event.markFailedAttempt();

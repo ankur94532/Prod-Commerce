@@ -6,6 +6,7 @@ import com.gocommerce.orders.dto.OrderDtos.CreateOrderItemRequest;
 import com.gocommerce.orders.dto.OrderDtos.CreateOrderRequest;
 import com.gocommerce.orders.dto.OrderDtos.OrderItemResponse;
 import com.gocommerce.orders.dto.OrderDtos.OrderResponse;
+import com.gocommerce.orders.exception.IdempotencyConflictException;
 import com.gocommerce.orders.exception.PaymentFailedException;
 import com.gocommerce.orders.metrics.OrderMetrics;
 import com.gocommerce.orders.model.Order;
@@ -21,7 +22,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 
 @Service
@@ -67,10 +73,19 @@ public class OrderService {
         }
 
         String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
+        String requestHash = normalizedIdempotencyKey != null ? hashIdempotencyRequest(request) : null;
+
         if (normalizedIdempotencyKey != null) {
             var existing = orderRepository.findByUserIdAndIdempotencyKey(request.userId(), normalizedIdempotencyKey);
             if (existing.isPresent()) {
-                return toResponse(existing.get());
+                Order existingOrder = existing.get();
+                if (existingOrder.getIdempotencyRequestHash() != null
+                        && !existingOrder.getIdempotencyRequestHash().equals(requestHash)) {
+                    throw new IdempotencyConflictException(
+                            "Idempotency-Key was already used with a different order payload"
+                    );
+                }
+                return toResponse(existingOrder);
             }
         }
 
@@ -90,7 +105,8 @@ public class OrderService {
                 OrderStatus.PENDING_PAYMENT,
                 total,
                 currency,
-                normalizedIdempotencyKey
+                normalizedIdempotencyKey,
+                requestHash
         );
 
         for (PricedOrderLine line : pricedLines) {
@@ -126,7 +142,16 @@ public class OrderService {
                     "Order " + saved.getId() + " for user " + request.userId()
             );
 
-            PaymentResult result = paymentProvider.charge(chargeRequest);
+            PaymentResult result;
+            try {
+                result = paymentProvider.charge(chargeRequest);
+            } catch (RuntimeException e) {
+                compensateStock(decremented);
+                saved.setStatus(OrderStatus.CANCELLED);
+                orderRepository.save(saved);
+                throw new PaymentFailedException("Payment processing error: " + e.getMessage());
+            }
+
             if (!result.success()) {
                 compensateStock(decremented);
                 saved.setStatus(OrderStatus.CANCELLED);
@@ -200,6 +225,31 @@ public class OrderService {
             throw new IllegalArgumentException("Idempotency-Key must be at most 128 characters");
         }
         return trimmed;
+    }
+
+    private String hashIdempotencyRequest(CreateOrderRequest request) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(nullToEmpty(request.userId()).getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) '|');
+
+            request.items().stream()
+                    .sorted(Comparator.comparing(CreateOrderItemRequest::productId))
+                    .forEach(item -> {
+                        digest.update(nullToEmpty(item.productId()).getBytes(StandardCharsets.UTF_8));
+                        digest.update((byte) ':');
+                        digest.update(Integer.toString(item.quantity()).getBytes(StandardCharsets.UTF_8));
+                        digest.update((byte) '|');
+                    });
+
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private OrderResponse toResponse(Order order) {

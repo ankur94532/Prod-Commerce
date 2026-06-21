@@ -1,5 +1,6 @@
 package com.gocommerce.orders.web;
 
+import com.gocommerce.orders.exception.IdempotencyConflictException;
 import com.gocommerce.orders.exception.PaymentFailedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +18,16 @@ public class OrderExceptionHandler {
         return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED).body(Map.of(
                 "timestamp", Instant.now().toString(),
                 "error", "PAYMENT_FAILED",
+                "message", ex.getMessage()
+        ));
+    }
+
+
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<Map<String, Object>> handleIdempotencyConflict(IdempotencyConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "timestamp", Instant.now().toString(),
+                "error", "IDEMPOTENCY_CONFLICT",
                 "message", ex.getMessage()
         ));
     }

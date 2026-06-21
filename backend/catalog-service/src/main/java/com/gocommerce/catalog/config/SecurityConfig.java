@@ -24,6 +24,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.*;
 
 @Configuration
@@ -33,32 +34,69 @@ public class SecurityConfig {
     @Value("${security.jwt.secret}")
     private String jwtSecret;
 
+    @Value("${security.internal.service-token:}")
+    private String internalServiceToken;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         JwtAuthenticationFilter jwtFilter = new JwtAuthenticationFilter(jwtSecret);
+        InternalServiceTokenFilter internalServiceTokenFilter = new InternalServiceTokenFilter(internalServiceToken);
 
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // public stuff
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/products/**").permitAll()
-
-                        // admin APIs
+                        .requestMatchers("/api/v1/internal/**").permitAll()
                         .requestMatchers("/api/v1/admin/**").authenticated()
-
-                        // anything else -> allow for now
-                        .anyRequest().permitAll()
+                        .anyRequest().authenticated()
                 )
+                .addFilterBefore(internalServiceTokenFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
     /**
-     * Very small JWT filter: reads Authorization: Bearer <token>, validates with HS256,
-     * extracts role(s), and sets Authentication so @PreAuthorize can see roles.
+     * Protects catalog's internal endpoints used by other backend services.
+     * This keeps inventory and product snapshot APIs away from public clients even if catalog-service is reachable.
+     */
+    static class InternalServiceTokenFilter extends OncePerRequestFilter {
+        private static final String HEADER = "X-Internal-Service-Token";
+
+        private final String expectedToken;
+
+        InternalServiceTokenFilter(String expectedToken) {
+            this.expectedToken = expectedToken;
+        }
+
+        @Override
+        protected boolean shouldNotFilter(HttpServletRequest request) {
+            return !request.getRequestURI().startsWith("/api/v1/internal/");
+        }
+
+        @Override
+        protected void doFilterInternal(HttpServletRequest request,
+                                        HttpServletResponse response,
+                                        FilterChain filterChain) throws ServletException, IOException {
+            String provided = request.getHeader(HEADER);
+            if (expectedToken == null || expectedToken.isBlank()
+                    || provided == null || provided.isBlank()
+                    || !MessageDigest.isEqual(
+                    expectedToken.getBytes(StandardCharsets.UTF_8),
+                    provided.getBytes(StandardCharsets.UTF_8))) {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN, "Invalid internal service token");
+                return;
+            }
+
+            filterChain.doFilter(request, response);
+        }
+    }
+
+    /**
+     * Reads Authorization: Bearer <token>, validates HS256 JWT, extracts role(s),
+     * and sets Authentication so @PreAuthorize can enforce admin APIs.
      */
     static class JwtAuthenticationFilter extends OncePerRequestFilter {
 
@@ -74,9 +112,8 @@ public class SecurityConfig {
             String method = request.getMethod();
 
             if (path.startsWith("/actuator")) return true;
-            if ("GET".equals(method) && path.startsWith("/api/v1/products")) return true;
-
-            return false;
+            if (path.startsWith("/api/v1/internal/")) return true;
+            return "GET".equals(method) && path.startsWith("/api/v1/products");
         }
 
         @Override
@@ -102,8 +139,6 @@ public class SecurityConfig {
                         .getBody();
 
                 String subject = claims.getSubject();
-
-                // roles may be in "role" or "roles"
                 Set<String> roles = new HashSet<>();
 
                 Object singleRole = claims.get("role");
@@ -129,7 +164,6 @@ public class SecurityConfig {
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             } catch (Exception ex) {
-                // invalid token -> no auth
                 SecurityContextHolder.clearContext();
             }
 

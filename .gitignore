@@ -18,6 +18,7 @@ frontend/.vite/
 # OS
 .DS_Store
 Thumbs.db
+__MACOSX/
 
 # Logs
 *.log
@@ -25,11 +26,21 @@ Thumbs.db
 # Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.venv/
+venv/
 
 # Env / secrets
 .env
 .env.local
 k8s/secrets.yaml
 
-# Local ML models
+# Local ML models and generated search-eval artifacts
 models/
+backend/search-service/scripts/generated-queries.jsonl
+backend/search-service/scripts/*-results.json
+backend/search-service/scripts/*-report.json
+
+# Python cache
+__pycache__/
+*.pyc
