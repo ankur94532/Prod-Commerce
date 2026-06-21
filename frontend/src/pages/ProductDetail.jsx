@@ -4,6 +4,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { fetchProductBySlug } from "../api/catalog";
 import { addCartItem } from "../api/cart";
 import { useAuth } from "../context/AuthContext.jsx";
+import ProductImage from "../components/ProductImage";
 
 function ProductDetail() {
   const { slug } = useParams();
@@ -83,15 +84,12 @@ function ProductDetail() {
     <section className="max-w-4xl mx-auto px-4 py-8 grid gap-6 md:grid-cols-2">
       <div className="bg-white rounded-lg shadow-sm p-4 flex items-center justify-center">
         <div className="w-full aspect-[4/3] bg-slate-100 rounded flex items-center justify-center overflow-hidden">
-          {product.imageUrls && product.imageUrls.length > 0 ? (
-            <img
-              src={product.imageUrls[0]}
-              alt={product.name}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <span className="text-xs text-slate-400">No image</span>
-          )}
+          <ProductImage
+            src={product.imageUrls?.[0]}
+            alt={product.name}
+            category={product.categorySlug}
+            className="w-full h-full object-cover"
+          />
         </div>
       </div>
 

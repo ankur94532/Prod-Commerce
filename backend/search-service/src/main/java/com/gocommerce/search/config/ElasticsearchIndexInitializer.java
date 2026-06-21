@@ -22,7 +22,7 @@ public class ElasticsearchIndexInitializer {
                     return;
                 }
                 if (!indexOps.exists()) {
-                    indexOps.create();
+                    indexOps.create(ProductIndexSettings.settings());
                 }
                 indexOps.putMapping(indexOps.createMapping(ProductDocument.class));
             } catch (Exception ex) {

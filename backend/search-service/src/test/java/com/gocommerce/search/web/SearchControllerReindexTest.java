@@ -1,5 +1,6 @@
 package com.gocommerce.search.web;
 
+import com.gocommerce.search.service.ReindexResult;
 import com.gocommerce.search.service.SearchService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,8 +20,8 @@ class SearchControllerReindexTest {
         // Simple stub SearchService – no Mockito involved
         SearchService stubService = new SearchService(null, null, null, null) {
             @Override
-            public int reindexProducts() {
-                return 42;
+            public ReindexResult reindexProductsDetailed() {
+                return ReindexResult.success(42, 42, 42);
             }
         };
 
@@ -32,6 +33,10 @@ class SearchControllerReindexTest {
     void reindex_returnsIndexedCount() throws Exception {
         mockMvc.perform(post("/api/v1/search/reindex"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.indexed").value(42));
+                .andExpect(jsonPath("$.indexed").value(42))
+                .andExpect(jsonPath("$.catalogProducts").value(42))
+                .andExpect(jsonPath("$.indexedDocuments").value(42))
+                .andExpect(jsonPath("$.consistent").value(true))
+                .andExpect(jsonPath("$.status").value("ok"));
     }
 }

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { searchProducts } from "../api/search";
 import { fetchProductFilters } from "../api/catalog";
+import ProductImage from "../components/ProductImage";
 
 const attributeFilterLabels = {
   color: "Color",
@@ -353,15 +354,14 @@ export default function SearchResultsPage() {
                 key={item.id}
                 className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col"
               >
-                {item.thumbnailUrl && (
-                  <div className="aspect-[4/3] bg-slate-100">
-                    <img
-                      src={item.thumbnailUrl}
-                      alt={item.name}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                )}
+                <div className="aspect-[4/3] bg-slate-100">
+                  <ProductImage
+                    src={item.thumbnailUrl}
+                    alt={item.name}
+                    category={item.category}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
 
                 <div className="p-4 flex flex-col gap-2 flex-1">
                   <h3 className="text-sm font-medium text-slate-900">

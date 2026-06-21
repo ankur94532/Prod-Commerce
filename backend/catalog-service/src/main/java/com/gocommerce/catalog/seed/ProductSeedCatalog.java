@@ -3,6 +3,8 @@ package com.gocommerce.catalog.seed;
 import com.gocommerce.catalog.entity.Product;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -12,6 +14,10 @@ public final class ProductSeedCatalog {
     }
 
     public static List<Product> products() {
+        return expandToTarget(baseProducts(), 1_000);
+    }
+
+    private static List<Product> baseProducts() {
         return List.of(
                 p("s26-ultra-256gb-gray", "Galaxy S26 Ultra 256GB (Gray)", "Flagship smartphone with high-end camera and display.", "89999", "smartphones", "Samsung", 50, Map.of("storage", "256GB", "color", "Gray")),
                 p("s26-ultra-512gb-black", "Galaxy S26 Ultra 512GB (Black)", "Flagship smartphone with extra storage for power users.", "99999", "smartphones", "Samsung", 30, Map.of("storage", "512GB", "color", "Black")),
@@ -131,6 +137,153 @@ public final class ProductSeedCatalog {
                 p("mechanical-keyboard-rgb", "RGB Mechanical Keyboard", "Wired mechanical keyboard with tactile switches.", "3499", "accessories-cables", "Redragon", 70, Map.of("switch", "Brown", "layout", "TKL")),
                 p("phone-stand-aluminium", "Aluminium Phone Stand", "Adjustable desk stand for phones and small tablets.", "499", "accessories-cables", "Portronics", 150, Map.of("material", "Aluminium", "color", "Silver"))
         );
+    }
+
+    private static List<Product> expandToTarget(List<Product> baseProducts, int targetCount) {
+        List<Product> products = new ArrayList<>(baseProducts);
+        int variantNumber = 1;
+        while (products.size() < targetCount) {
+            for (Product baseProduct : baseProducts) {
+                if (products.size() >= targetCount) {
+                    break;
+                }
+                products.add(variant(baseProduct, variantNumber));
+            }
+            variantNumber++;
+        }
+        return List.copyOf(products);
+    }
+
+    private static Product variant(Product baseProduct, int variantNumber) {
+        String descriptor = descriptorFor(baseProduct.getCategorySlug(), variantNumber);
+        Map<String, String> attributes = variantAttributes(baseProduct, descriptor, variantNumber);
+        String name = baseProduct.getName() + " " + descriptor;
+        String slug = slugify(baseProduct.getSlug() + "-" + descriptor + "-" + variantNumber);
+        BigDecimal price = baseProduct.getPrice().add(priceDelta(baseProduct, variantNumber));
+        int stock = Math.max(5, baseProduct.getStockQuantity() + ((variantNumber % 7) * 9) - 18);
+
+        return new Product(
+                slug,
+                name,
+                descriptor + " variant. " + baseProduct.getDescription(),
+                price,
+                baseProduct.getCurrency(),
+                baseProduct.getCategorySlug(),
+                baseProduct.getBrand(),
+                List.of(imageUrl(baseProduct.getCategorySlug(), name)),
+                stock,
+                true,
+                attributes);
+    }
+
+    private static Map<String, String> variantAttributes(Product baseProduct, String descriptor, int variantNumber) {
+        Map<String, String> attributes = new LinkedHashMap<>(baseProduct.getAttributes());
+        String category = baseProduct.getCategorySlug();
+
+        switch (category) {
+            case "smartphones" -> {
+                attributes.put("color", pick(List.of("Black", "Blue", "Green", "Silver", "Purple", "Gold", "White", "Graphite", "Red"), variantNumber));
+                attributes.put("storage", pick(List.of("128GB", "256GB", "512GB", "1TB"), variantNumber));
+            }
+            case "laptops" -> {
+                attributes.put("memory", pick(List.of("8GB", "16GB", "24GB", "32GB"), variantNumber));
+                attributes.put("storage", pick(List.of("256GB", "512GB", "1TB", "2TB"), variantNumber + 1));
+            }
+            case "tablets" -> {
+                attributes.put("storage", pick(List.of("64GB", "128GB", "256GB", "512GB"), variantNumber));
+                attributes.put("screen", pick(List.of("10 inch", "11 inch", "12 inch", "13 inch"), variantNumber + 1));
+            }
+            case "earbuds-headphones" -> {
+                attributes.put("color", pick(List.of("Black", "White", "Blue", "Navy", "Silver", "Beige"), variantNumber));
+                attributes.put("type", pick(List.of("earbuds", "over-ear", "on-ear", "neckband"), variantNumber + 1));
+            }
+            case "watches-wearables" -> {
+                attributes.put("color", pick(List.of("Black", "Silver", "Midnight", "Graphite", "Rose Gold", "Aqua"), variantNumber));
+                attributes.put("size", pick(List.of("40mm", "42mm", "44mm", "45mm", "46mm"), variantNumber + 1));
+            }
+            case "mens-shirts", "mens-tshirts", "mens-jeans-trousers", "womens-tops" -> {
+                attributes.put("color", pick(List.of("Black", "White", "Blue", "Navy", "Green", "Maroon", "Grey", "Beige", "Olive"), variantNumber));
+                attributes.put("fit", pick(List.of("Regular", "Slim", "Relaxed", "Oversized", "Tapered"), variantNumber + 1));
+            }
+            case "womens-dresses" -> {
+                attributes.put("color", pick(List.of("Black", "Navy", "Rust", "Yellow", "Pink", "Teal", "Lavender"), variantNumber));
+                attributes.put("length", pick(List.of("Mini", "Knee", "Midi", "Maxi"), variantNumber + 1));
+            }
+            case "footwear" -> {
+                attributes.put("color", pick(List.of("Black", "White", "Brown", "Grey", "Navy", "Pink", "Tan"), variantNumber));
+                attributes.put("type", pick(List.of("Running", "Walking", "Formal", "Sneakers", "Sandals", "Heels"), variantNumber + 1));
+            }
+            case "bags-wallets" -> {
+                attributes.put("color", pick(List.of("Black", "Brown", "Tan", "Grey", "Navy", "Olive"), variantNumber));
+                attributes.put("material", pick(List.of("Polyester", "Leather", "Canvas", "Nylon"), variantNumber + 1));
+            }
+            case "kitchen-dining" -> {
+                attributes.put("material", pick(List.of("Steel", "Glass", "Aluminium", "Ceramic", "Plastic"), variantNumber));
+                attributes.put("capacity", pick(List.of("500ml", "1L", "1.5L", "2L", "4L"), variantNumber + 1));
+            }
+            case "home-appliances" -> {
+                attributes.put("color", pick(List.of("White", "Black", "Blue", "Silver", "Grey"), variantNumber));
+                attributes.put("power", pick(List.of("800W", "1200W", "1400W", "1500W", "2200W"), variantNumber + 1));
+            }
+            case "beauty-grooming" -> {
+                attributes.put("volume", pick(List.of("30ml", "50ml", "100ml", "150ml", "200ml"), variantNumber));
+                attributes.put("skinType", pick(List.of("All", "Oily", "Dry", "Sensitive"), variantNumber + 1));
+            }
+            case "fitness-sports" -> {
+                attributes.put("sport", pick(List.of("Yoga", "Training", "Badminton", "Football", "Cricket"), variantNumber));
+                attributes.put("type", pick(List.of("Beginner", "Adjustable", "Pro", "Training"), variantNumber + 1));
+            }
+            case "books-stationery" -> {
+                attributes.put("format", pick(List.of("Paperback", "Hardcover", "Notebook", "Planner", "Set"), variantNumber));
+                attributes.put("pieces", pick(List.of("1", "2", "5", "6", "10"), variantNumber + 1));
+            }
+            case "accessories-cables" -> {
+                attributes.put("color", pick(List.of("Black", "White", "Silver", "Blue", "Grey"), variantNumber));
+                attributes.put("type", pick(List.of("USB-C", "Wireless", "Wired", "Stand", "Adapter"), variantNumber + 1));
+            }
+            default -> attributes.put("variant", descriptor);
+        }
+        attributes.put("edition", descriptor);
+        return attributes;
+    }
+
+    private static BigDecimal priceDelta(Product baseProduct, int variantNumber) {
+        BigDecimal base = baseProduct.getPrice();
+        BigDecimal percent = BigDecimal.valueOf((variantNumber % 9) - 4).movePointLeft(2);
+        BigDecimal delta = base.multiply(percent);
+        return delta.add(BigDecimal.valueOf((long) variantNumber * 17L));
+    }
+
+    private static String descriptorFor(String category, int variantNumber) {
+        List<String> descriptors = switch (category) {
+            case "smartphones" -> List.of("Midnight", "Aurora", "Titanium", "Cobalt", "Pearl", "Graphite", "Sunrise", "Forest", "Ruby");
+            case "laptops" -> List.of("Creator", "Business", "Student", "Gaming", "Pro", "Air", "Studio", "Compact", "Elite");
+            case "tablets" -> List.of("WiFi", "Cellular", "Kids", "Sketch", "Reader", "Plus", "Mini", "Studio", "Pro");
+            case "earbuds-headphones" -> List.of("Bass", "Travel", "Studio", "Sport", "Clear", "Comfort", "Max", "Lite", "Pro");
+            case "watches-wearables" -> List.of("Active", "Classic", "Trail", "Metro", "Sport", "Wellness", "Steel", "Lite", "Pro");
+            case "mens-shirts", "mens-tshirts", "mens-jeans-trousers" -> List.of("Classic", "Urban", "Weekend", "Office", "Travel", "Premium", "Essential", "Comfort", "Heritage");
+            case "womens-tops", "womens-dresses" -> List.of("Everyday", "Brunch", "Evening", "Office", "Resort", "Festive", "Classic", "Soft", "Studio");
+            case "footwear" -> List.of("Daily", "Trail", "Street", "Office", "Cushion", "Flex", "Classic", "Active", "Lite");
+            case "bags-wallets" -> List.of("Metro", "Travel", "Office", "Compact", "Daily", "Classic", "Premium", "Utility", "Lite");
+            case "kitchen-dining" -> List.of("Family", "Compact", "Premium", "Daily", "Classic", "Steel", "Glass", "Chef", "Smart");
+            case "home-appliances" -> List.of("Compact", "Smart", "Energy", "Digital", "Premium", "Classic", "Turbo", "Silent", "Max");
+            case "beauty-grooming" -> List.of("Daily", "Sensitive", "Hydra", "Glow", "Matte", "Fresh", "Repair", "Pro", "Lite");
+            case "fitness-sports" -> List.of("Training", "Pro", "Active", "Home", "Outdoor", "Flex", "Endurance", "Lite", "Club");
+            case "books-stationery" -> List.of("Study", "Office", "Creative", "Daily", "Classic", "Premium", "Pocket", "Planner", "Archive");
+            case "accessories-cables" -> List.of("Desk", "Travel", "Fast", "Compact", "Pro", "Lite", "Max", "Utility", "Everyday");
+            default -> List.of("Classic", "Premium", "Daily", "Compact", "Pro", "Lite", "Max", "Urban", "Essential");
+        };
+        return descriptors.get((variantNumber - 1) % descriptors.size());
+    }
+
+    private static String pick(List<String> values, int index) {
+        return values.get(Math.floorMod(index - 1, values.size()));
+    }
+
+    private static String slugify(String value) {
+        return value.trim().toLowerCase()
+                .replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("(^-+|-+$)", "");
     }
 
     private static Product p(String slug,

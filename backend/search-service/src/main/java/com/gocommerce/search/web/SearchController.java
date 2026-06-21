@@ -2,6 +2,7 @@ package com.gocommerce.search.web;
 
 import com.gocommerce.search.dto.SearchDtos.SearchRequest;
 import com.gocommerce.search.dto.SearchDtos.SearchResponse;
+import com.gocommerce.search.service.ReindexResult;
 import com.gocommerce.search.service.SearchService;
 import org.springframework.web.bind.annotation.*;
 import org.slf4j.Logger;
@@ -76,8 +77,13 @@ public class SearchController {
 
     @PostMapping("/reindex")
     public Map<String, Object> reindex() {
-        int indexed = searchService.reindexProducts();
-        return Map.of("indexed", indexed);
+        ReindexResult result = searchService.reindexProductsDetailed();
+        return Map.of(
+                "indexed", result.indexed(),
+                "catalogProducts", result.catalogProducts(),
+                "indexedDocuments", result.indexedDocuments(),
+                "consistent", result.consistent(),
+                "status", result.status());
     }
 
     // 🔹 NEW: index a single product (called from catalog-service)

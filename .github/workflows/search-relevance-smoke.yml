@@ -1,0 +1,29 @@
+name: Search relevance smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "backend/search-service/**"
+      - "backend/catalog-service/**"
+      - "backend/api-gateway/**"
+      - ".github/workflows/search-relevance-smoke.yml"
+
+jobs:
+  static-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile relevance evaluator
+        run: python3 -m py_compile backend/search-service/scripts/relevance_eval.py
+      - name: Generate smoke query set
+        run: |
+          python3 backend/search-service/scripts/relevance_eval.py \
+            --base-url "${CATALOG_BASE_URL:-http://localhost:8080}" \
+            --count 500 \
+            --generate-only \
+            --dump-queries /tmp/search-smoke-queries.jsonl
+        continue-on-error: true

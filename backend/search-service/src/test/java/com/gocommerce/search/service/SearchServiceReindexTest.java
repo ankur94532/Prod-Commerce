@@ -20,6 +20,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -77,6 +78,7 @@ class SearchServiceReindexTest {
     @Test
     void reindexProducts_recreatesIndexAndReturnsDocumentCount() {
         when(indexOperations.exists()).thenReturn(true);
+        when(productSearchRepository.count()).thenReturn(1L);
 
         Map<String, Object> p1 = new HashMap<>();
         p1.put("id", "1");
@@ -93,15 +95,35 @@ class SearchServiceReindexTest {
         assertEquals(1, count);
 
         verify(indexOperations).delete();
-        verify(indexOperations).create();
+        verify(indexOperations).create(anyMap());
         verify(productSearchRepository).saveAll(anyList());
         verify(indexOperations).refresh();
         verify(searchCache).clear();
     }
 
     @Test
+    void reindexProductsDetailed_reportsConsistencyMismatch() {
+        when(indexOperations.exists()).thenReturn(false);
+        when(productSearchRepository.count()).thenReturn(0L);
+
+        Map<String, Object> p1 = new HashMap<>();
+        p1.put("id", "1");
+        p1.put("name", "Galaxy S26 Ultra");
+
+        catalogClient.setProducts(List.of(p1));
+
+        ReindexResult result = searchService.reindexProductsDetailed();
+
+        assertEquals(1, result.indexed());
+        assertEquals(1, result.catalogProducts());
+        assertEquals(0, result.indexedDocuments());
+        assertEquals(false, result.consistent());
+    }
+
+    @Test
     void reindexProducts_skipsProductsWithoutId() {
         when(indexOperations.exists()).thenReturn(false);
+        when(productSearchRepository.count()).thenReturn(0L);
 
         Map<String, Object> p1 = new HashMap<>();
         p1.put("name", "No Id Product");

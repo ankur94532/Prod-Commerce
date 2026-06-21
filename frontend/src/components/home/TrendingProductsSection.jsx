@@ -23,7 +23,7 @@ export default function TrendingProductsSection() {
 
     getTrendingProducts(5)
       .then((data) => {
-        setItems(data.items || []);
+        setItems(data || []);
       })
       .catch((err) => {
         console.error("Failed to load trending products", err);

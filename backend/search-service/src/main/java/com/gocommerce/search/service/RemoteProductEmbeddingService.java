@@ -3,6 +3,7 @@ package com.gocommerce.search.service;
 import com.gocommerce.search.config.EmbeddingProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -59,6 +60,19 @@ public class RemoteProductEmbeddingService implements ProductEmbeddingService {
         }
     }
 
+    public HealthStatus healthStatus() {
+        try {
+            ResponseEntity<Map> response = restTemplate.getForEntity(baseUrl + "/health", Map.class);
+            Map<?, ?> body = response.getBody();
+            String status = body != null && body.get("status") != null ? String.valueOf(body.get("status")) : "unknown";
+            String model = body != null && body.get("model") != null ? String.valueOf(body.get("model")) : null;
+            boolean available = response.getStatusCode().is2xxSuccessful();
+            return new HealthStatus(available, baseUrl, status, model, null);
+        } catch (Exception ex) {
+            return new HealthStatus(false, baseUrl, "unavailable", null, ex.getMessage());
+        }
+    }
+
     private void validateDimensions(List<Float> embedding) {
         if (embedding == null || embedding.size() != dimensions) {
             throw new IllegalStateException("Expected embedding dimension " + dimensions
@@ -80,5 +94,13 @@ public class RemoteProductEmbeddingService implements ProductEmbeddingService {
             int dimensions,
             String model,
             Map<String, Object> usage
+    ) {}
+
+    public record HealthStatus(
+            boolean available,
+            String baseUrl,
+            String status,
+            String model,
+            String message
     ) {}
 }

@@ -253,6 +253,89 @@ class SearchServiceTest {
     }
 
     @Test
+    void search_boostsKnownBrandAtStartOfQuery() {
+        ProductSearchRepository repo = mock(ProductSearchRepository.class);
+        SearchCache cache = mock(SearchCache.class);
+        ElasticsearchOperations elasticsearchOperations = mock(ElasticsearchOperations.class);
+        ProductEmbeddingService embeddingService = mock(ProductEmbeddingService.class);
+
+        SearchService service = new SearchService(repo, cache, null, elasticsearchOperations, null, embeddingService);
+
+        SearchRequest req = new SearchRequest("AND studio", null, 0, 20);
+        when(cache.get(any())).thenReturn(Optional.empty());
+        when(embeddingService.embed("AND studio")).thenReturn(testVector());
+
+        ProductDocument doc = new ProductDocument(
+                "p6",
+                "women-wrap-dress-rust",
+                "Women Wrap Dress Studio",
+                "womens-dresses",
+                new BigDecimal("1799"),
+                "INR",
+                List.of("dress"),
+                "https://example.com/dress.jpg",
+                0L
+        );
+
+        when(elasticsearchOperations.search(
+                any(org.springframework.data.elasticsearch.core.query.Query.class),
+                eq(ProductDocument.class)))
+                .thenReturn(searchHits(doc, 1));
+
+        service.search(req);
+
+        ArgumentCaptor<org.springframework.data.elasticsearch.core.query.Query> queryCaptor =
+                ArgumentCaptor.forClass(org.springframework.data.elasticsearch.core.query.Query.class);
+        verify(elasticsearchOperations).search(queryCaptor.capture(), eq(ProductDocument.class));
+        NativeQuery nativeQuery = (NativeQuery) queryCaptor.getValue();
+        String queryJson = nativeQuery.getQuery().toString();
+        assertThat(queryJson)
+                .contains("brand")
+                .contains("AND")
+                .contains("18.0");
+    }
+
+    @Test
+    void search_doesNotBoostAndBrandInMiddleOfNaturalQuery() {
+        ProductSearchRepository repo = mock(ProductSearchRepository.class);
+        SearchCache cache = mock(SearchCache.class);
+        ElasticsearchOperations elasticsearchOperations = mock(ElasticsearchOperations.class);
+        ProductEmbeddingService embeddingService = mock(ProductEmbeddingService.class);
+
+        SearchService service = new SearchService(repo, cache, null, elasticsearchOperations, null, embeddingService);
+
+        SearchRequest req = new SearchRequest("shirts and pants", null, 0, 20);
+        when(cache.get(any())).thenReturn(Optional.empty());
+        when(embeddingService.embed("shirts and pants")).thenReturn(testVector());
+
+        ProductDocument doc = new ProductDocument(
+                "p7",
+                "cargo-pants",
+                "Men Cargo Pants",
+                "mens-jeans-trousers",
+                new BigDecimal("1899"),
+                "INR",
+                List.of("pants"),
+                "https://example.com/pants.jpg",
+                0L
+        );
+
+        when(elasticsearchOperations.search(
+                any(org.springframework.data.elasticsearch.core.query.Query.class),
+                eq(ProductDocument.class)))
+                .thenReturn(searchHits(doc, 1));
+
+        service.search(req);
+
+        ArgumentCaptor<org.springframework.data.elasticsearch.core.query.Query> queryCaptor =
+                ArgumentCaptor.forClass(org.springframework.data.elasticsearch.core.query.Query.class);
+        verify(elasticsearchOperations).search(queryCaptor.capture(), eq(ProductDocument.class));
+        NativeQuery nativeQuery = (NativeQuery) queryCaptor.getValue();
+        String queryJson = nativeQuery.getQuery().toString();
+        assertThat(queryJson).doesNotContain("value=AND");
+    }
+
+    @Test
     void search_usesVectorQuery_whenModeIsVector() {
         ProductSearchRepository repo = mock(ProductSearchRepository.class);
         SearchCache cache = mock(SearchCache.class);

@@ -2,6 +2,7 @@ package com.gocommerce.search.service;
 
 import com.gocommerce.search.cache.SearchCache;
 import com.gocommerce.search.client.CatalogClient;
+import com.gocommerce.search.config.ProductIndexSettings;
 import com.gocommerce.search.config.SearchProperties;
 import com.gocommerce.search.dto.SearchDtos.SearchRequest;
 import com.gocommerce.search.dto.SearchDtos.SearchResponse;
@@ -29,14 +30,29 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.StringJoiner;
 
 @Service
 public class SearchService {
 
     private static final Logger log = LoggerFactory.getLogger(SearchService.class);
+    private static final Set<String> KNOWN_BRANDS = Set.of(
+            "acer", "allen solly", "amazon", "amazon basics", "amazon essentials", "amazfit", "and",
+            "apple", "arrow", "asus", "aurelia", "bajaj", "bewakoof", "boat", "boldfit", "borosil",
+            "catwalk", "cello", "classmate", "converse", "crocs", "dell", "dennis lingo",
+            "eureka forbes", "fitbit", "garmin", "garnier", "gear", "google", "harpa", "h&m",
+            "highlander", "hp", "hrx", "instant", "jbl", "kore", "lavie", "lenovo", "levi's",
+            "logitech", "mango", "marks & spencer", "maybelline", "milton", "minimalist",
+            "motorola", "msi", "nike", "nivia", "nothing", "only", "oneplus", "orient",
+            "penguin", "pentonic", "peter england", "philips", "portronics", "prestige", "puma",
+            "red tape", "reddragon", "redmi", "roadster", "samsung", "skechers", "skybags",
+            "solimo", "sony", "soundcore", "stuffcool", "symbol", "the souled store",
+            "tokyo talkies", "u.s. polo assn.", "van heusen", "vero moda", "wildhorn", "woodland",
+            "wrangler", "yonex");
     private static final List<CategoryIntent> CATEGORY_INTENTS = List.of(
             new CategoryIntent("bags-wallets", List.of(
                     "laptop backpack", "backpack", "wallet", "sling bag", "tote bag", "crossbody bag",
@@ -290,6 +306,13 @@ public class SearchService {
                     .query(expandedQuery)
                     .operator(Operator.Or)
                     .boost(1.5f))));
+            for (String brand : detectBrandIntents(query)) {
+                b.should(Query.of(s -> s.term(t -> t
+                        .field("brand")
+                        .value(brand)
+                        .caseInsensitive(true)
+                        .boost(18.0f))));
+            }
             if (categoryIntent != null) {
                 b.should(Query.of(s -> s.term(t -> t
                         .field("category")
@@ -499,13 +522,18 @@ public class SearchService {
      */
     @Transactional
     public int reindexProducts() {
+        return reindexProductsDetailed().indexed();
+    }
+
+    @Transactional
+    public ReindexResult reindexProductsDetailed() {
         try {
             var indexOps = elasticsearchOperations.indexOps(ProductDocument.class);
 
             if (indexOps.exists()) {
                 indexOps.delete();
             }
-            indexOps.create();
+            indexOps.create(ProductIndexSettings.settings());
             indexOps.putMapping(indexOps.createMapping(ProductDocument.class));
 
             List<Map<String, Object>> products = catalogClient.fetchAllProducts();
@@ -516,21 +544,28 @@ public class SearchService {
 
             productSearchRepository.saveAll(docs);
             indexOps.refresh();
+            long indexedDocuments = productSearchRepository.count();
             clearSearchCache();
 
-            log.info("Reindexed {} products into Elasticsearch", docs.size());
+            ReindexResult result = ReindexResult.success(docs.size(), products.size(), indexedDocuments);
+            if (result.consistent()) {
+                log.info("Reindexed {} products into Elasticsearch", docs.size());
+            } else {
+                log.warn("Search reindex consistency mismatch: catalogProducts={}, indexed={}, indexedDocuments={}",
+                        products.size(), docs.size(), indexedDocuments);
+            }
 
             if (searchMetrics != null) {
                 searchMetrics.onReindexCompleted(docs.size());
             }
 
-            return docs.size();
+            return result;
         } catch (Exception ex) {
             log.warn("Reindex failed, returning indexed=0 (catalog or ES might be down)", ex);
             if (searchMetrics != null) {
                 searchMetrics.onReindexCompleted(0);
             }
-            return 0;
+            return ReindexResult.failure(ex.getMessage());
         }
     }
 
@@ -791,6 +826,30 @@ public class SearchService {
             }
         }
         return null;
+    }
+
+    private static Set<String> detectBrandIntents(String query) {
+        String normalized = normalized(query);
+        if (normalized == null) {
+            return Set.of();
+        }
+
+        String tokenizedQuery = tokenized(normalized);
+        Set<String> matches = new LinkedHashSet<>();
+        for (String brand : KNOWN_BRANDS) {
+            String tokenizedBrand = tokenized(brand);
+            if ("and".equals(brand)) {
+                String lower = normalized.toLowerCase();
+                if (lower.equals("and") || lower.startsWith("and ")) {
+                    matches.add("AND");
+                }
+                continue;
+            }
+            if (tokenizedQuery.contains(tokenizedBrand)) {
+                matches.add(brand);
+            }
+        }
+        return matches;
     }
 
     private static String categoryExpansion(String category) {

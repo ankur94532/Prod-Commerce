@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchProducts, fetchProductFilters } from "../api/catalog";
+import ProductImage from "../components/ProductImage";
 
 function formatCategoryLabel(slug) {
   if (!slug) return "";
@@ -280,15 +281,12 @@ function Products() {
             className="bg-white rounded-lg shadow-sm hover:shadow-md transition p-3 flex flex-col"
           >
             <div className="aspect-[4/3] bg-slate-100 rounded mb-3 flex items-center justify-center overflow-hidden">
-              {p.imageUrls && p.imageUrls.length > 0 ? (
-                <img
-                  src={p.imageUrls[0]}
-                  alt={p.name}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <span className="text-xs text-slate-400">No image</span>
-              )}
+              <ProductImage
+                src={p.imageUrls?.[0]}
+                alt={p.name}
+                category={p.categorySlug}
+                className="w-full h-full object-cover"
+              />
             </div>
             <h3 className="text-sm font-medium text-slate-900 mb-1 line-clamp-2">
               {p.name}

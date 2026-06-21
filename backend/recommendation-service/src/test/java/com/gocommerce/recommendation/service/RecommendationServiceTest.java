@@ -131,4 +131,55 @@ class RecommendationServiceTest {
         assertEquals(10L, first.totalQuantity());
         assertEquals(new BigDecimal("1000.00"), first.totalRevenue());
     }
+
+    @Test
+    void getTrending_fillsMissingItemsFromCatalogFallback() {
+        CatalogFallbackClient catalogFallbackClient = mock(CatalogFallbackClient.class);
+        recommendationService = new RecommendationService(productStatsRepository, null, catalogFallbackClient);
+
+        ProductStats s1 = new ProductStats("p1", "Product One", 10, new BigDecimal("1000.00"));
+        when(productStatsRepository.findTop10ByOrderByTotalQuantityDesc())
+                .thenReturn(List.of(s1));
+        when(catalogFallbackClient.fetchProducts(3))
+                .thenReturn(List.of(
+                        new CatalogFallbackClient.CatalogProduct("p1", "Product One", new BigDecimal("100.00")),
+                        new CatalogFallbackClient.CatalogProduct("p2", "Fallback Two", new BigDecimal("200.00")),
+                        new CatalogFallbackClient.CatalogProduct("p3", "Fallback Three", new BigDecimal("300.00"))
+                ));
+
+        TrendingResponse response = recommendationService.getTrending(3);
+
+        List<TrendingProduct> items = response.items();
+        assertEquals(3, items.size());
+        assertEquals("p1", items.get(0).productId());
+        assertEquals(10L, items.get(0).totalQuantity());
+        assertEquals("p2", items.get(1).productId());
+        assertEquals(0L, items.get(1).totalQuantity());
+        assertEquals(BigDecimal.ZERO, items.get(1).totalRevenue());
+        assertEquals("p3", items.get(2).productId());
+    }
+
+    @Test
+    void getTrending_prefersDiverseCatalogFallbackCategories() {
+        CatalogFallbackClient catalogFallbackClient = mock(CatalogFallbackClient.class);
+        recommendationService = new RecommendationService(productStatsRepository, null, catalogFallbackClient);
+
+        when(productStatsRepository.findTop10ByOrderByTotalQuantityDesc())
+                .thenReturn(List.of());
+        when(catalogFallbackClient.fetchProducts(3))
+                .thenReturn(List.of(
+                        new CatalogFallbackClient.CatalogProduct("p1", "Laptop One", new BigDecimal("100.00"), "laptops"),
+                        new CatalogFallbackClient.CatalogProduct("p2", "Laptop Two", new BigDecimal("200.00"), "laptops"),
+                        new CatalogFallbackClient.CatalogProduct("p3", "Phone One", new BigDecimal("300.00"), "smartphones"),
+                        new CatalogFallbackClient.CatalogProduct("p4", "Shoe One", new BigDecimal("400.00"), "footwear")
+                ));
+
+        TrendingResponse response = recommendationService.getTrending(3);
+
+        List<TrendingProduct> items = response.items();
+        assertEquals(3, items.size());
+        assertEquals("p4", items.get(0).productId());
+        assertEquals("p1", items.get(1).productId());
+        assertEquals("p3", items.get(2).productId());
+    }
 }

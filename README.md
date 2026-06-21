@@ -53,6 +53,28 @@ The embedding service loads the local BGE model from `models/bge-small-en-v1.5` 
 curl -X POST http://localhost:8084/api/v1/search/reindex
 ```
 
+Run the search relevance evaluator against the live API:
+
+```bash
+python3 backend/search-service/scripts/relevance_eval.py \
+  --base-url http://localhost:8080 \
+  --count 10000 \
+  --dump-queries backend/search-service/scripts/generated-queries.jsonl \
+  --output-json backend/search-service/scripts/relevance-results.json
+```
+
+The evaluator generates catalog-aware queries and reports common search metrics:
+`precision@k`, `recall@k`, `hit@k`, `MRR`, `MAP`, and `NDCG@k`.
+Use `--mode text` or `--mode vector` only for hidden/dev comparisons; omit `--mode`
+to test the default hybrid path used by the frontend.
+
+For a faster local/CI smoke gate against running services:
+
+```bash
+BASE_URL=http://localhost:8080 COUNT=500 FAIL_UNDER=0.95 \
+  backend/search-service/scripts/relevance_smoke.sh
+```
+
 Each Spring service can then be run from its module, for example:
 
 ```bash

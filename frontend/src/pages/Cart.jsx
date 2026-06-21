@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getCart } from "../api/cart";
+import ProductImage from "../components/ProductImage";
 
 function Cart() {
   const { user } = useAuth();
@@ -109,17 +110,12 @@ function Cart() {
                 className="flex gap-3 bg-white rounded-lg shadow-sm p-3"
               >
                 <div className="w-20 h-20 bg-slate-100 rounded overflow-hidden flex items-center justify-center">
-                  {item.imageUrl ? (
-                    <img
-                      src={item.imageUrl}
-                      alt={item.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-[10px] text-slate-400">
-                      No image
-                    </span>
-                  )}
+                  <ProductImage
+                    src={item.imageUrl}
+                    alt={item.name}
+                    className="w-full h-full object-cover"
+                    placeholderClassName="text-[10px]"
+                  />
                 </div>
                 <div className="flex-1">
                   <h3 className="text-sm font-medium text-slate-900">
