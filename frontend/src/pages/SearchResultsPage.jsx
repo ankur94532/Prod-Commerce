@@ -56,6 +56,13 @@ export default function SearchResultsPage() {
     attributes: {},
   });
 
+  useEffect(() => {
+    if (!searchParams.has("mode")) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("mode");
+    setSearchParams(next, { replace: true });
+  }, [paramsKey, searchParams, setSearchParams]);
+
   const priceFormatter = useMemo(
     () =>
       new Intl.NumberFormat("en-IN", {

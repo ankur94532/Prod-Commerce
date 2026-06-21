@@ -11,6 +11,8 @@ import java.util.List;
 @Document(indexName = "products")
 public class ProductDocument {
 
+    public static final int SEARCH_EMBEDDING_DIMENSIONS = 384;
+
     @Id
     private String id;
 
@@ -67,6 +69,9 @@ public class ProductDocument {
 
     @Field(type = FieldType.Text)
     private String searchText;
+
+    @Field(type = FieldType.Dense_Vector, dims = SEARCH_EMBEDDING_DIMENSIONS)
+    private List<Float> searchEmbedding;
 
     @Field(type = FieldType.Long)
     private Long productId;
@@ -206,6 +211,9 @@ public class ProductDocument {
 
     public String getSearchText() { return searchText; }
     public void setSearchText(String searchText) { this.searchText = searchText; }
+
+    public List<Float> getSearchEmbedding() { return searchEmbedding; }
+    public void setSearchEmbedding(List<Float> searchEmbedding) { this.searchEmbedding = searchEmbedding; }
 
     public Long getPopularityScore() { return popularityScore; }
     public void setPopularityScore(Long popularityScore) {

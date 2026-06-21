@@ -5,7 +5,8 @@ const searchApi = axios.create({
   baseURL: "http://localhost:8080/api/v1",
 });
 
-// Calls GET /api/v1/search?q=...
+// Calls GET /api/v1/search?q=... without a mode.
+// The backend defaults this to hybrid search; text/vector modes are dev-only API options.
 export async function searchProducts({
   q,
   category,

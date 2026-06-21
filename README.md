@@ -41,6 +41,18 @@ Update the passwords/secrets in `.env`, then start dependencies:
 docker compose up -d postgres redis kafka zookeeper elasticsearch prometheus grafana
 ```
 
+Start the local embedding service when using vector or hybrid search:
+
+```bash
+docker compose up -d embedding-service
+```
+
+The embedding service loads the local BGE model from `models/bge-small-en-v1.5` and returns 384-dimensional normalized vectors. After starting it, reindex products so Elasticsearch stores real embeddings:
+
+```bash
+curl -X POST http://localhost:8084/api/v1/search/reindex
+```
+
 Each Spring service can then be run from its module, for example:
 
 ```bash

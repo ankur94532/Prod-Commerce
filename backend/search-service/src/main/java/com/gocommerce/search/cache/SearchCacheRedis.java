@@ -85,12 +85,13 @@ public class SearchCacheRedis implements SearchCache {
         String memory = normalized(request.memory());
         String material = normalized(request.material());
         String sort = normalized(request.sort());
+        String mode = normalized(request.mode());
         int page = request.page() != null ? request.page() : 0;
         int size = request.size() != null ? request.size() : 20;
 
         return String.format(
-                "search:q=%s|cat=%s|brand=%s|min=%s|max=%s|stock=%s|color=%s|type=%s|fit=%s|storage=%s|memory=%s|material=%s|sort=%s|p=%d|s=%d",
-                q, category, brand, minPrice, maxPrice, inStock, color, type, fit, storage, memory, material, sort, page, size);
+                "search:q=%s|cat=%s|brand=%s|min=%s|max=%s|stock=%s|color=%s|type=%s|fit=%s|storage=%s|memory=%s|material=%s|sort=%s|mode=%s|p=%d|s=%d",
+                q, category, brand, minPrice, maxPrice, inStock, color, type, fit, storage, memory, material, sort, mode, page, size);
     }
 
     private String normalized(String value) {

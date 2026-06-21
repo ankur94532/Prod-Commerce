@@ -54,6 +54,18 @@ services:
     ports:
       - "6379:6379"
 
+  embedding-service:
+    build:
+      context: ./backend/embedding-service
+    container_name: ecommerce-embedding-service
+    environment:
+      EMBEDDING_MODEL_PATH: /models/bge-small-en-v1.5
+      EMBEDDING_MODEL_NAME: BAAI/bge-small-en-v1.5
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./models/bge-small-en-v1.5:/models/bge-small-en-v1.5:ro
+
   prometheus:
     image: prom/prometheus:latest
     container_name: ecommerce-prometheus

@@ -4,6 +4,7 @@ import com.gocommerce.search.SearchServiceApplication;
 import com.gocommerce.search.cache.SearchCache;
 import com.gocommerce.search.model.ProductDocument;
 import com.gocommerce.search.repository.ProductSearchRepository;
+import com.gocommerce.search.service.ProductEmbeddingService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,6 +17,7 @@ import org.springframework.data.elasticsearch.core.TotalHitsRelation;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -45,6 +47,9 @@ class SearchControllerTest {
 
         @MockBean
         private ElasticsearchOperations elasticsearchOperations;
+
+        @MockBean
+        private ProductEmbeddingService productEmbeddingService;
 
         @Test
         void health_returnsOk() throws Exception {
@@ -105,5 +110,58 @@ class SearchControllerTest {
                         .andExpect(jsonPath("$.items[0].id").value("p1"))
                         .andExpect(jsonPath("$.items[0].name").value(containsString("MacBook Pro")))
                         .andExpect(jsonPath("$.items[0].category").value("laptops"));
+        }
+
+        @Test
+        void vectorSearch_returnsResultFromRepository_whenCacheMiss() throws Exception {
+                when(searchCache.get(any())).thenReturn(Optional.empty());
+                when(productEmbeddingService.embed("comfortable running shoes"))
+                        .thenReturn(Collections.nCopies(ProductDocument.SEARCH_EMBEDDING_DIMENSIONS, 0.01f));
+
+                ProductDocument doc = new ProductDocument(
+                        "p2",
+                        "road-running-shoes",
+                        "Road Running Shoes",
+                        "shoes",
+                        new BigDecimal("6999"),
+                        "INR",
+                        List.of("running", "footwear"),
+                        "https://example.com/shoes.jpg",
+                        0L
+                );
+
+                SearchHit<ProductDocument> hit = new SearchHit<>(
+                        "products",
+                        doc.getId(),
+                        null,
+                        1.0f,
+                        new Object[0],
+                        Map.of(),
+                        Map.of(),
+                        null,
+                        null,
+                        List.of(),
+                        doc);
+
+                when(elasticsearchOperations.search(
+                                any(org.springframework.data.elasticsearch.core.query.Query.class),
+                                eq(ProductDocument.class)))
+                        .thenReturn(new SearchHitsImpl<>(
+                                1,
+                                TotalHitsRelation.EQUAL_TO,
+                                1.0f,
+                                null,
+                                null,
+                                List.of(hit),
+                                null,
+                                null,
+                                null));
+
+                mockMvc.perform(get("/api/v1/search/vector")
+                                .param("q", "comfortable running shoes"))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.total").value(1))
+                        .andExpect(jsonPath("$.items[0].id").value("p2"))
+                        .andExpect(jsonPath("$.items[0].category").value("shoes"));
         }
 }

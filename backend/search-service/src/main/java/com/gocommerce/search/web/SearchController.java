@@ -41,12 +41,36 @@ public class SearchController {
             @RequestParam(name = "memory", required = false) String memory,
             @RequestParam(name = "material", required = false) String material,
             @RequestParam(name = "sort", required = false) String sort,
+            @RequestParam(name = "mode", required = false) String mode,
             @RequestParam(name = "page", required = false, defaultValue = "0") Integer page,
             @RequestParam(name = "size", required = false, defaultValue = "20") Integer size) {
-        logger.info("Search request: q='{}', category='{}', brand='{}', minPrice={}, maxPrice={}, inStock={}, color='{}', type='{}', fit='{}', storage='{}', memory='{}', material='{}', sort='{}', page={}, size={}",
-                query, category, brand, minPrice, maxPrice, inStock, color, type, fit, storage, memory, material, sort, page, size);
+        logger.info("Search request: q='{}', category='{}', brand='{}', minPrice={}, maxPrice={}, inStock={}, color='{}', type='{}', fit='{}', storage='{}', memory='{}', material='{}', sort='{}', mode='{}', page={}, size={}",
+                query, category, brand, minPrice, maxPrice, inStock, color, type, fit, storage, memory, material, sort, mode, page, size);
         SearchRequest req = new SearchRequest(query, category, brand, minPrice, maxPrice, inStock,
-                color, type, fit, storage, memory, material, sort, page, size);
+                color, type, fit, storage, memory, material, sort, mode, page, size);
+        return searchService.search(req);
+    }
+
+    @GetMapping("/vector")
+    public SearchResponse vectorSearch(
+            @RequestParam(name = "q", required = false) String query,
+            @RequestParam(name = "category", required = false) String category,
+            @RequestParam(name = "brand", required = false) String brand,
+            @RequestParam(name = "minPrice", required = false) BigDecimal minPrice,
+            @RequestParam(name = "maxPrice", required = false) BigDecimal maxPrice,
+            @RequestParam(name = "inStock", required = false) Boolean inStock,
+            @RequestParam(name = "color", required = false) String color,
+            @RequestParam(name = "type", required = false) String type,
+            @RequestParam(name = "fit", required = false) String fit,
+            @RequestParam(name = "storage", required = false) String storage,
+            @RequestParam(name = "memory", required = false) String memory,
+            @RequestParam(name = "material", required = false) String material,
+            @RequestParam(name = "page", required = false, defaultValue = "0") Integer page,
+            @RequestParam(name = "size", required = false, defaultValue = "20") Integer size) {
+        logger.info("Vector search request: q='{}', category='{}', brand='{}', minPrice={}, maxPrice={}, inStock={}, color='{}', type='{}', fit='{}', storage='{}', memory='{}', material='{}', page={}, size={}",
+                query, category, brand, minPrice, maxPrice, inStock, color, type, fit, storage, memory, material, page, size);
+        SearchRequest req = new SearchRequest(query, category, brand, minPrice, maxPrice, inStock,
+                color, type, fit, storage, memory, material, null, "vector", page, size);
         return searchService.search(req);
     }
 

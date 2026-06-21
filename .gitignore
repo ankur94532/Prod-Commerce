@@ -22,7 +22,14 @@ Thumbs.db
 # Logs
 *.log
 
+# Python
+__pycache__/
+*.py[cod]
+
 # Env / secrets
 .env
 .env.local
 k8s/secrets.yaml
+
+# Local ML models
+models/

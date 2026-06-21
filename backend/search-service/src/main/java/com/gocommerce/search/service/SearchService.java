@@ -2,12 +2,14 @@ package com.gocommerce.search.service;
 
 import com.gocommerce.search.cache.SearchCache;
 import com.gocommerce.search.client.CatalogClient;
+import com.gocommerce.search.config.SearchProperties;
 import com.gocommerce.search.dto.SearchDtos.SearchRequest;
 import com.gocommerce.search.dto.SearchDtos.SearchResponse;
 import com.gocommerce.search.dto.SearchDtos.SearchResultItem;
 import com.gocommerce.search.metrics.SearchMetrics;
 import com.gocommerce.search.model.ProductDocument;
 import com.gocommerce.search.repository.ProductSearchRepository;
+import co.elastic.clients.elasticsearch._types.ScriptLanguage;
 import co.elastic.clients.elasticsearch._types.SortOptions;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
@@ -35,24 +37,94 @@ import java.util.StringJoiner;
 public class SearchService {
 
     private static final Logger log = LoggerFactory.getLogger(SearchService.class);
+    private static final List<CategoryIntent> CATEGORY_INTENTS = List.of(
+            new CategoryIntent("bags-wallets", List.of(
+                    "laptop backpack", "backpack", "wallet", "sling bag", "tote bag", "crossbody bag",
+                    "travel bag", "bag", "bags")),
+            new CategoryIntent("accessories-cables", List.of(
+                    "phone stand", "charger", "cable", "usb cable", "usb-c cable", "keyboard", "mouse",
+                    "adapter", "accessory", "accessories")),
+            new CategoryIntent("smartphones", List.of(
+                    "mobile", "mobiles", "phone", "phones", "smartphone", "smartphones", "android phone",
+                    "iphone", "5g phone", "cell phone", "handset")),
+            new CategoryIntent("laptops", List.of(
+                    "gaming laptop", "work laptop", "student laptop", "laptop", "laptops", "ultrabook")),
+            new CategoryIntent("tablets", List.of(
+                    "android tablet", "e reader", "tablet", "tablets", "ipad", "kindle")),
+            new CategoryIntent("earbuds-headphones", List.of(
+                    "wireless earbuds", "bluetooth headphones", "noise cancelling headphones", "earbuds",
+                    "headphones", "earphones", "headset")),
+            new CategoryIntent("watches-wearables", List.of(
+                    "smart watch", "sports watch", "fitness band", "smartwatch", "wearable", "watch", "watches")),
+            new CategoryIntent("footwear", List.of(
+                    "running shoes", "walking shoes", "formal shoes", "flip flops", "shoes", "shoe",
+                    "sneakers", "sandals", "heels")),
+            new CategoryIntent("mens-shirts", List.of(
+                    "shirt for men", "men shirt", "mens shirt", "formal shirt", "casual shirt")),
+            new CategoryIntent("mens-tshirts", List.of(
+                    "oversized tshirt", "cotton tshirt", "men tshirt", "mens tshirt", "t shirt", "tshirt")),
+            new CategoryIntent("mens-jeans-trousers", List.of(
+                    "men jeans", "mens jeans", "jeans", "trousers", "chinos", "pants")),
+            new CategoryIntent("womens-dresses", List.of(
+                    "women dress", "maxi dress", "party dress", "dress", "dresses")),
+            new CategoryIntent("womens-tops", List.of(
+                    "women top", "kurti", "blouse", "top", "tops")),
+            new CategoryIntent("home-appliances", List.of(
+                    "home appliance", "air fryer", "washing machine", "refrigerator", "appliance", "fan",
+                    "mixer", "vacuum")),
+            new CategoryIntent("kitchen-dining", List.of(
+                    "lunch box", "pressure cooker", "water bottle", "cookware", "kitchen", "dining",
+                    "bottle", "tawa", "flask")),
+            new CategoryIntent("fitness-sports", List.of(
+                    "yoga mat", "badminton", "football", "cricket", "dumbbell", "sports", "fitness", "gym")),
+            new CategoryIntent("beauty-grooming", List.of(
+                    "face wash", "beauty", "grooming", "lipstick", "serum", "shampoo", "trimmer", "sunscreen")),
+            new CategoryIntent("books-stationery", List.of(
+                    "notebook", "notebooks", "stationery", "planner", "book", "books", "pen", "paper"))
+    );
 
     private final ProductSearchRepository productSearchRepository;
     private final SearchCache searchCache;
     private final CatalogClient catalogClient;
     private final ElasticsearchOperations elasticsearchOperations;
     private final SearchMetrics searchMetrics;
+    private final ProductEmbeddingService embeddingService;
+    private final SearchProperties searchProperties;
 
     @Autowired
     public SearchService(ProductSearchRepository productSearchRepository,
                          SearchCache searchCache,
                          CatalogClient catalogClient,
                          ElasticsearchOperations elasticsearchOperations,
-                         SearchMetrics searchMetrics) {
+                         SearchMetrics searchMetrics,
+                         ProductEmbeddingService embeddingService,
+                         SearchProperties searchProperties) {
         this.productSearchRepository = productSearchRepository;
         this.searchCache = searchCache;
         this.catalogClient = catalogClient;
         this.elasticsearchOperations = elasticsearchOperations;
         this.searchMetrics = searchMetrics;
+        this.embeddingService = embeddingService;
+        this.searchProperties = searchProperties != null ? searchProperties : new SearchProperties();
+    }
+
+    public SearchService(ProductSearchRepository productSearchRepository,
+                         SearchCache searchCache,
+                         CatalogClient catalogClient,
+                         ElasticsearchOperations elasticsearchOperations,
+                         SearchMetrics searchMetrics) {
+        this(productSearchRepository, searchCache, catalogClient, elasticsearchOperations, searchMetrics,
+                new HashingProductEmbeddingService(), new SearchProperties());
+    }
+
+    public SearchService(ProductSearchRepository productSearchRepository,
+                         SearchCache searchCache,
+                         CatalogClient catalogClient,
+                         ElasticsearchOperations elasticsearchOperations,
+                         SearchMetrics searchMetrics,
+                         ProductEmbeddingService embeddingService) {
+        this(productSearchRepository, searchCache, catalogClient, elasticsearchOperations, searchMetrics,
+                embeddingService, new SearchProperties());
     }
 
     // overload for tests that were using 4-arg ctor
@@ -60,7 +132,8 @@ public class SearchService {
                          SearchCache searchCache,
                          CatalogClient catalogClient,
                          ElasticsearchOperations elasticsearchOperations) {
-        this(productSearchRepository, searchCache, catalogClient, elasticsearchOperations, null);
+        this(productSearchRepository, searchCache, catalogClient, elasticsearchOperations, null,
+                new HashingProductEmbeddingService(), new SearchProperties());
     }
 
     @CircuitBreaker(name = "searchCore", fallbackMethod = "searchFallback")
@@ -69,6 +142,8 @@ public class SearchService {
         String categoryFilter = request.category();
         int page = request.page() != null ? Math.max(request.page(), 0) : 0;
         int size = request.size() != null ? Math.max(1, Math.min(request.size(), 100)) : 20;
+        String mode = normalizedMode(request.mode());
+        String sort = usesVectorScoring(mode) ? null : normalized(request.sort());
 
         if (query == null || query.isBlank()) {
             return new SearchResponse(List.of(), 0);
@@ -88,7 +163,8 @@ public class SearchService {
                 normalized(request.storage()),
                 normalized(request.memory()),
                 normalized(request.material()),
-                normalized(request.sort()),
+                sort,
+                mode,
                 page,
                 size);
 
@@ -124,6 +200,16 @@ public class SearchService {
     }
 
     private SearchResponse doSearchAndCache(SearchRequest normalizedRequest) {
+        if (isVectorMode(normalizedRequest.mode())) {
+            return doVectorSearchAndCache(normalizedRequest);
+        }
+        if (isHybridMode(normalizedRequest.mode())) {
+            return doHybridSearchAndCache(normalizedRequest);
+        }
+        return doKeywordSearchAndCache(normalizedRequest);
+    }
+
+    private SearchResponse doKeywordSearchAndCache(SearchRequest normalizedRequest) {
         int page = normalizedRequest.page() != null ? normalizedRequest.page() : 0;
         int size = normalizedRequest.size() != null ? normalizedRequest.size() : 20;
 
@@ -158,17 +244,7 @@ public class SearchService {
     }
 
     private Query buildSearchQuery(SearchRequest request) {
-        List<Query> filters = new ArrayList<>();
-        addTermFilter(filters, "category", request.category());
-        addTermFilter(filters, "brand", request.brand());
-        addTermFilter(filters, "color", request.color());
-        addTermFilter(filters, "type", request.type());
-        addTermFilter(filters, "fit", request.fit());
-        addTermFilter(filters, "storage", request.storage());
-        addTermFilter(filters, "memory", request.memory());
-        addTermFilter(filters, "material", request.material());
-        addPriceFilter(filters, request.minPrice(), request.maxPrice());
-        addStockFilter(filters, request.inStock());
+        List<Query> filters = buildFilters(request);
 
         return Query.of(q -> q.bool(b -> {
             b.must(buildTextQuery(request.query()));
@@ -180,32 +256,174 @@ public class SearchService {
     }
 
     private Query buildTextQuery(String query) {
-        return Query.of(q -> q.bool(b -> b
-                .should(Query.of(s -> s.matchPhrase(mp -> mp
-                        .field("name")
-                        .query(query)
-                        .boost(6.0f))))
-                .should(Query.of(s -> s.match(m -> m
-                        .field("name")
-                        .query(query)
-                        .operator(Operator.And)
-                        .boost(4.0f))))
-                .should(Query.of(s -> s.match(m -> m
-                        .field("description")
-                        .query(query)
-                        .operator(Operator.And)
-                        .boost(2.0f))))
-                .should(Query.of(s -> s.match(m -> m
-                        .field("searchText")
-                        .query(query)
-                        .operator(Operator.And)
-                        .boost(2.0f))))
-                .should(Query.of(s -> s.match(m -> m
-                        .field("searchText")
-                        .query(query)
-                        .operator(Operator.Or)
-                        .boost(1.0f))))
-                .minimumShouldMatch("1")));
+        String expandedQuery = expandQuery(query);
+        String categoryIntent = detectCategoryIntent(query);
+
+        return Query.of(q -> q.bool(b -> {
+            b.should(Query.of(s -> s.matchPhrase(mp -> mp
+                    .field("name")
+                    .query(query)
+                    .boost(6.0f))));
+            b.should(Query.of(s -> s.match(m -> m
+                    .field("name")
+                    .query(query)
+                    .operator(Operator.And)
+                    .boost(4.0f))));
+            b.should(Query.of(s -> s.match(m -> m
+                    .field("name")
+                    .query(query)
+                    .operator(Operator.And)
+                    .fuzziness("AUTO")
+                    .boost(3.0f))));
+            b.should(Query.of(s -> s.match(m -> m
+                    .field("description")
+                    .query(query)
+                    .operator(Operator.And)
+                    .boost(2.0f))));
+            b.should(Query.of(s -> s.match(m -> m
+                    .field("searchText")
+                    .query(query)
+                    .operator(Operator.And)
+                    .boost(2.0f))));
+            b.should(Query.of(s -> s.match(m -> m
+                    .field("searchText")
+                    .query(expandedQuery)
+                    .operator(Operator.Or)
+                    .boost(1.5f))));
+            if (categoryIntent != null) {
+                b.should(Query.of(s -> s.term(t -> t
+                        .field("category")
+                        .value(categoryIntent)
+                        .boost(25.0f))));
+            }
+            return b.minimumShouldMatch("1");
+        }));
+    }
+
+    private SearchResponse doHybridSearchAndCache(SearchRequest normalizedRequest) {
+        int page = normalizedRequest.page() != null ? normalizedRequest.page() : 0;
+        int size = normalizedRequest.size() != null ? normalizedRequest.size() : 20;
+        List<Float> queryVector = embeddingService.embed(normalizedRequest.query());
+
+        if (isZeroVector(queryVector)) {
+            return doKeywordSearchAndCache(normalizedRequest);
+        }
+
+        SearchHits<ProductDocument> searchHits = elasticsearchOperations.search(
+                NativeQuery.builder()
+                        .withQuery(buildHybridQuery(normalizedRequest, queryVector))
+                        .withPageable(PageRequest.of(page, size))
+                        .withTrackTotalHits(true)
+                        .build(),
+                ProductDocument.class);
+
+        List<SearchResultItem> items = searchHits.getSearchHits().stream()
+                .map(SearchHit::getContent)
+                .map(this::toResultItem)
+                .toList();
+
+        if (searchMetrics != null && items.isEmpty()) {
+            searchMetrics.incrementZeroResult();
+        }
+
+        long total = searchHits.getTotalHits();
+        int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
+        SearchResponse response = new SearchResponse(items, total, page, size, totalPages);
+        searchCache.put(normalizedRequest, response);
+
+        return response;
+    }
+
+    private SearchResponse doVectorSearchAndCache(SearchRequest normalizedRequest) {
+        int page = normalizedRequest.page() != null ? normalizedRequest.page() : 0;
+        int size = normalizedRequest.size() != null ? normalizedRequest.size() : 20;
+        List<Float> queryVector = embeddingService.embed(normalizedRequest.query());
+
+        if (isZeroVector(queryVector)) {
+            SearchResponse response = new SearchResponse(List.of(), 0, page, size, 0);
+            searchCache.put(normalizedRequest, response);
+            return response;
+        }
+
+        SearchHits<ProductDocument> searchHits = elasticsearchOperations.search(
+                NativeQuery.builder()
+                        .withQuery(buildVectorQuery(normalizedRequest, queryVector))
+                        .withPageable(PageRequest.of(page, size))
+                        .withTrackTotalHits(true)
+                        .build(),
+                ProductDocument.class);
+
+        List<SearchResultItem> items = searchHits.getSearchHits().stream()
+                .map(SearchHit::getContent)
+                .map(this::toResultItem)
+                .toList();
+
+        if (searchMetrics != null && items.isEmpty()) {
+            searchMetrics.incrementZeroResult();
+        }
+
+        long total = searchHits.getTotalHits();
+        int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
+        SearchResponse response = new SearchResponse(items, total, page, size, totalPages);
+        searchCache.put(normalizedRequest, response);
+
+        return response;
+    }
+
+    private Query buildVectorQuery(SearchRequest request, List<Float> queryVector) {
+        List<Query> filters = buildFilters(request);
+        filters.add(Query.of(q -> q.exists(e -> e.field("searchEmbedding"))));
+
+        Query baseQuery = Query.of(q -> q.bool(b -> {
+            b.filter(filters);
+            return b;
+        }));
+
+        return Query.of(q -> q.scriptScore(ss -> ss
+                .query(baseQuery)
+                .script(s -> s.inline(i -> i
+                        .lang(ScriptLanguage.Painless)
+                        .source("cosineSimilarity(params.queryVector, 'searchEmbedding') + 1.0")
+                        .params("queryVector", JsonData.of(queryVector))))));
+    }
+
+    private Query buildHybridQuery(SearchRequest request, List<Float> queryVector) {
+        List<Query> filters = buildFilters(request);
+        filters.add(Query.of(q -> q.exists(e -> e.field("searchEmbedding"))));
+
+        Query baseQuery = Query.of(q -> q.bool(b -> {
+            b.must(buildTextQuery(request.query()));
+            b.filter(filters);
+            return b;
+        }));
+
+        double keywordWeight = searchProperties.getHybrid().getKeywordWeight();
+        double vectorWeight = searchProperties.getHybrid().getVectorWeight();
+
+        return Query.of(q -> q.scriptScore(ss -> ss
+                .query(baseQuery)
+                .script(s -> s.inline(i -> i
+                        .lang(ScriptLanguage.Painless)
+                        .source("(_score * params.keywordWeight) + ((cosineSimilarity(params.queryVector, 'searchEmbedding') + 1.0) * params.vectorWeight)")
+                        .params("queryVector", JsonData.of(queryVector))
+                        .params("keywordWeight", JsonData.of(keywordWeight))
+                        .params("vectorWeight", JsonData.of(vectorWeight))))));
+    }
+
+    private List<Query> buildFilters(SearchRequest request) {
+        List<Query> filters = new ArrayList<>();
+        addTermFilter(filters, "category", request.category());
+        addInferredCategoryFilter(filters, request);
+        addTermFilter(filters, "brand", request.brand());
+        addTermFilter(filters, "color", request.color());
+        addTermFilter(filters, "type", request.type());
+        addTermFilter(filters, "fit", request.fit());
+        addTermFilter(filters, "storage", request.storage());
+        addTermFilter(filters, "memory", request.memory());
+        addTermFilter(filters, "material", request.material());
+        addPriceFilter(filters, request.minPrice(), request.maxPrice());
+        addStockFilter(filters, request.inStock());
+        return filters;
     }
 
     private void addTermFilter(List<Query> filters, String field, String value) {
@@ -216,6 +434,17 @@ public class SearchService {
                 .field(field)
                 .value(value)
                 .caseInsensitive(true))));
+    }
+
+    private void addInferredCategoryFilter(List<Query> filters, SearchRequest request) {
+        if (request.category() != null && !request.category().isBlank()) {
+            return;
+        }
+
+        String categoryIntent = detectCategoryIntent(request.query());
+        if (categoryIntent != null) {
+            addTermFilter(filters, "category", categoryIntent);
+        }
     }
 
     private void addPriceFilter(List<Query> filters, BigDecimal minPrice, BigDecimal maxPrice) {
@@ -412,9 +641,11 @@ public class SearchService {
 
         List<String> tags = asStringList(p.get("tags"));
         Map<String, String> attributes = asStringMap(p.get("attributes"));
-        String searchText = buildSearchText(name, description, brand, category, tags, attributes);
+        String searchText = firstNonBlank(
+                asString(p.get("embeddingText")),
+                buildSearchText(name, description, brand, category, tags, attributes));
 
-        return new ProductDocument(
+        ProductDocument document = new ProductDocument(
                 id,
                 slug,
                 name,
@@ -436,6 +667,8 @@ public class SearchService {
                 searchText,
                 0L
         );
+        document.setSearchEmbedding(embeddingService.embed(searchText));
+        return document;
     }
 
     private static String asString(Object o) {
@@ -534,6 +767,94 @@ public class SearchService {
         return value != null && !value.isBlank() ? value.trim() : null;
     }
 
+    private static String expandQuery(String query) {
+        String normalized = normalized(query);
+        if (normalized == null) {
+            return query;
+        }
+
+        String category = detectCategoryIntent(normalized);
+        return category != null ? normalized + " " + categoryExpansion(category) : normalized;
+    }
+
+    private static String detectCategoryIntent(String query) {
+        String normalized = normalized(query);
+        if (normalized == null) {
+            return null;
+        }
+        String tokenizedQuery = tokenized(normalized);
+        for (CategoryIntent intent : CATEGORY_INTENTS) {
+            for (String alias : intent.aliases()) {
+                if (tokenizedQuery.contains(tokenized(alias))) {
+                    return intent.category();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String categoryExpansion(String category) {
+        return switch (category) {
+            case "smartphones" -> "phone phones smartphone smartphones mobile mobiles handset";
+            case "laptops" -> "laptop laptops ultrabook gaming notebook computer";
+            case "tablets" -> "tablet tablets ipad kindle e-reader";
+            case "earbuds-headphones" -> "earbuds headphones earphones headset audio";
+            case "watches-wearables" -> "watch watches smartwatch wearable fitness band";
+            case "footwear" -> "shoes shoe sneakers footwear sandals heels";
+            case "bags-wallets" -> "bag bags backpack wallet tote sling crossbody";
+            case "mens-shirts" -> "men mens shirt shirts formal casual";
+            case "mens-tshirts" -> "men mens tshirt t-shirt tee cotton";
+            case "mens-jeans-trousers" -> "men mens jeans trousers chinos pants";
+            case "womens-dresses" -> "women womens dress dresses maxi party";
+            case "womens-tops" -> "women womens top tops kurti blouse";
+            case "home-appliances" -> "home appliance appliances fan mixer vacuum refrigerator";
+            case "kitchen-dining" -> "kitchen dining bottle cookware lunch box flask";
+            case "fitness-sports" -> "fitness sports gym yoga badminton football cricket";
+            case "beauty-grooming" -> "beauty grooming lipstick serum shampoo trimmer sunscreen";
+            case "books-stationery" -> "book books stationery notebook pen planner paper";
+            case "accessories-cables" -> "accessory accessories charger cable keyboard mouse adapter stand";
+            default -> "";
+        };
+    }
+
+    private static String tokenized(String value) {
+        String normalized = normalized(value);
+        if (normalized == null) {
+            return " ";
+        }
+        return " " + normalized.toLowerCase().replaceAll("[^a-z0-9]+", " ").trim() + " ";
+    }
+
+    private static String normalizedMode(String value) {
+        String normalized = normalized(value);
+        if (normalized == null || "hybrid".equalsIgnoreCase(normalized)) {
+            return "hybrid";
+        }
+        if ("keyword".equalsIgnoreCase(normalized) || "text".equalsIgnoreCase(normalized)) {
+            return "text";
+        }
+        if ("vector".equalsIgnoreCase(normalized) || "semantic".equalsIgnoreCase(normalized)) {
+            return "vector";
+        }
+        return "hybrid";
+    }
+
+    private static boolean isVectorMode(String value) {
+        return "vector".equalsIgnoreCase(value);
+    }
+
+    private static boolean isHybridMode(String value) {
+        return "hybrid".equalsIgnoreCase(value);
+    }
+
+    private static boolean usesVectorScoring(String value) {
+        return isVectorMode(value) || isHybridMode(value);
+    }
+
+    private static boolean isZeroVector(List<Float> vector) {
+        return vector == null || vector.stream().allMatch(value -> value == null || value == 0.0f);
+    }
+
     private static String firstNonBlank(String... vals) {
         for (String v : vals) {
             if (v != null && !v.isBlank())
@@ -549,5 +870,8 @@ public class SearchService {
                 .replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("(^-+|-+$)", "");
         return slug.isBlank() ? null : slug;
+    }
+
+    private record CategoryIntent(String category, List<String> aliases) {
     }
 }

@@ -11,6 +11,8 @@ import org.springframework.web.client.RestClient;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.StringJoiner;
+import java.util.stream.Stream;
 
 @Component
 public class SearchIndexClient {
@@ -86,16 +88,52 @@ public class SearchIndexClient {
         map.put("id", String.valueOf(p.getId()));
         map.put("slug", p.getSlug());
         map.put("name", p.getName());
+        map.put("description", p.getDescription());
+        map.put("brand", p.getBrand());
         map.put("category", p.getCategorySlug());
         map.put("price", p.getPrice());
         map.put("currency", p.getCurrency());
+        map.put("stockQuantity", p.getStockQuantity());
 
         List<String> imageUrls = p.getImageUrls();
         if (imageUrls != null && !imageUrls.isEmpty()) {
             map.put("thumbnailUrl", imageUrls.get(0));
+            map.put("imageUrls", imageUrls);
         }
 
-        // You could also add tags (brand, category) if you want richer search later.
+        Map<String, String> attributes = p.getAttributes();
+        if (attributes != null && !attributes.isEmpty()) {
+            map.put("attributes", attributes);
+        }
+        map.put("tags", Stream.of(p.getBrand(), p.getCategorySlug())
+                .filter(value -> value != null && !value.isBlank())
+                .toList());
+        map.put("embeddingText", buildEmbeddingText(p));
+
         return map;
+    }
+
+    private String buildEmbeddingText(Product product) {
+        StringJoiner joiner = new StringJoiner(" ");
+        addText(joiner, product.getName());
+        addText(joiner, product.getDescription());
+        addText(joiner, product.getBrand());
+        addText(joiner, product.getCategorySlug());
+
+        Map<String, String> attributes = product.getAttributes();
+        if (attributes != null) {
+            attributes.forEach((key, value) -> {
+                addText(joiner, key);
+                addText(joiner, value);
+            });
+        }
+
+        return joiner.toString();
+    }
+
+    private void addText(StringJoiner joiner, String value) {
+        if (value != null && !value.isBlank()) {
+            joiner.add(value);
+        }
     }
 }

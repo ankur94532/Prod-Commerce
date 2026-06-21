@@ -19,12 +19,37 @@ public class SearchDtos {
             String memory,
             String material,
             String sort,
+            String mode,
             Integer page,
             Integer size
     ) {
         public SearchRequest(String query, String category, Integer page, Integer size) {
             this(query, category, null, null, null, null, null, null, null, null, null, null,
-                    null, page, size);
+                    null, null, page, size);
+        }
+
+        public SearchRequest(String query, String category, String mode, Integer page, Integer size) {
+            this(query, category, null, null, null, null, null, null, null, null, null, null,
+                    null, mode, page, size);
+        }
+
+        public SearchRequest(String query,
+                             String category,
+                             String brand,
+                             BigDecimal minPrice,
+                             BigDecimal maxPrice,
+                             Boolean inStock,
+                             String color,
+                             String type,
+                             String fit,
+                             String storage,
+                             String memory,
+                             String material,
+                             String sort,
+                             Integer page,
+                             Integer size) {
+            this(query, category, brand, minPrice, maxPrice, inStock, color, type, fit, storage, memory,
+                    material, sort, null, page, size);
         }
     }
 
