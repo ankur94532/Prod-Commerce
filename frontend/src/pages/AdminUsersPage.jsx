@@ -26,7 +26,6 @@ export default function AdminUsersPage() {
   // ---- Load users ----
   const loadPage = async (targetPage = 0) => {
     try {
-        console.log("Let's load all the users");
       setLoading(true);
       setError(null);
       const res = await listAdminUsers({ page: targetPage, size });

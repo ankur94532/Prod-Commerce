@@ -400,6 +400,176 @@ class SearchServiceTest {
     }
 
     @Test
+    void search_returnsEmptyResultForBlankQuery_withoutTouchingCacheOrElasticsearch() {
+        ProductSearchRepository repo = mock(ProductSearchRepository.class);
+        SearchCache cache = mock(SearchCache.class);
+        ElasticsearchOperations elasticsearchOperations = mock(ElasticsearchOperations.class);
+
+        SearchService service = new SearchService(repo, cache, null, elasticsearchOperations);
+
+        SearchResponse result = service.search(new SearchRequest("   ", null, 0, 20));
+
+        assertThat(result.total()).isZero();
+        assertThat(result.items()).isEmpty();
+        verifyNoInteractions(cache);
+        verifyNoInteractions(repo);
+        verifyNoInteractions(elasticsearchOperations);
+    }
+
+    @Test
+    void search_normalizesPageAndCapsResultSize() {
+        ProductSearchRepository repo = mock(ProductSearchRepository.class);
+        SearchCache cache = mock(SearchCache.class);
+        ElasticsearchOperations elasticsearchOperations = mock(ElasticsearchOperations.class);
+        ProductEmbeddingService embeddingService = mock(ProductEmbeddingService.class);
+
+        SearchService service = new SearchService(repo, cache, null, elasticsearchOperations, null, embeddingService);
+
+        SearchRequest req = new SearchRequest("laptop", null, -5, 500);
+        when(cache.get(any())).thenReturn(Optional.empty());
+        when(embeddingService.embed("laptop")).thenReturn(testVector());
+
+        ProductDocument doc = new ProductDocument(
+                "p8",
+                "office-laptop",
+                "Office Laptop",
+                "laptops",
+                new BigDecimal("59999"),
+                "INR",
+                List.of("laptop"),
+                "https://example.com/laptop.jpg",
+                0L
+        );
+
+        when(elasticsearchOperations.search(
+                any(org.springframework.data.elasticsearch.core.query.Query.class),
+                eq(ProductDocument.class)))
+                .thenReturn(searchHits(doc, 1));
+
+        SearchResponse result = service.search(req);
+
+        assertThat(result.page()).isZero();
+        assertThat(result.size()).isEqualTo(100);
+
+        ArgumentCaptor<SearchRequest> cacheRequestCaptor = ArgumentCaptor.forClass(SearchRequest.class);
+        verify(cache).put(cacheRequestCaptor.capture(), any(SearchResponse.class));
+        assertThat(cacheRequestCaptor.getValue().page()).isZero();
+        assertThat(cacheRequestCaptor.getValue().size()).isEqualTo(100);
+    }
+
+    @Test
+    void hybridSearchFallsBackToKeywordQuery_whenEmbeddingIsZeroVector() {
+        ProductSearchRepository repo = mock(ProductSearchRepository.class);
+        SearchCache cache = mock(SearchCache.class);
+        ElasticsearchOperations elasticsearchOperations = mock(ElasticsearchOperations.class);
+        ProductEmbeddingService embeddingService = mock(ProductEmbeddingService.class);
+
+        SearchService service = new SearchService(repo, cache, null, elasticsearchOperations, null, embeddingService);
+
+        SearchRequest req = new SearchRequest("unknown punctuation", null, 0, 20);
+        when(cache.get(any())).thenReturn(Optional.empty());
+        when(embeddingService.embed("unknown punctuation"))
+                .thenReturn(Collections.nCopies(ProductDocument.SEARCH_EMBEDDING_DIMENSIONS, 0.0f));
+
+        ProductDocument doc = new ProductDocument(
+                "p9",
+                "fallback-product",
+                "Fallback Product",
+                "accessories-cables",
+                new BigDecimal("999"),
+                "INR",
+                List.of("fallback"),
+                "https://example.com/fallback.jpg",
+                0L
+        );
+
+        when(elasticsearchOperations.search(
+                any(org.springframework.data.elasticsearch.core.query.Query.class),
+                eq(ProductDocument.class)))
+                .thenReturn(searchHits(doc, 1));
+
+        SearchResponse result = service.search(req);
+
+        assertThat(result.total()).isEqualTo(1);
+
+        ArgumentCaptor<org.springframework.data.elasticsearch.core.query.Query> queryCaptor =
+                ArgumentCaptor.forClass(org.springframework.data.elasticsearch.core.query.Query.class);
+        verify(elasticsearchOperations).search(queryCaptor.capture(), eq(ProductDocument.class));
+        NativeQuery nativeQuery = (NativeQuery) queryCaptor.getValue();
+        assertThat(nativeQuery.getQuery().isBool()).isTrue();
+    }
+
+    @Test
+    void search_appliesFiltersForBrandPriceStockAndAttributes() {
+        ProductSearchRepository repo = mock(ProductSearchRepository.class);
+        SearchCache cache = mock(SearchCache.class);
+        ElasticsearchOperations elasticsearchOperations = mock(ElasticsearchOperations.class);
+        ProductEmbeddingService embeddingService = mock(ProductEmbeddingService.class);
+
+        SearchService service = new SearchService(repo, cache, null, elasticsearchOperations, null, embeddingService);
+
+        SearchRequest req = new SearchRequest(
+                "running shoes",
+                "footwear",
+                "nike",
+                new BigDecimal("1000"),
+                new BigDecimal("5000"),
+                true,
+                "black",
+                "running",
+                "regular",
+                null,
+                null,
+                "mesh",
+                "relevance",
+                0,
+                20
+        );
+        when(cache.get(any())).thenReturn(Optional.empty());
+        when(embeddingService.embed("running shoes")).thenReturn(testVector());
+
+        ProductDocument doc = new ProductDocument(
+                "p10",
+                "nike-running-shoe",
+                "Nike Running Shoe",
+                "footwear",
+                new BigDecimal("3999"),
+                "INR",
+                List.of("running", "shoes"),
+                "https://example.com/nike.jpg",
+                0L
+        );
+
+        when(elasticsearchOperations.search(
+                any(org.springframework.data.elasticsearch.core.query.Query.class),
+                eq(ProductDocument.class)))
+                .thenReturn(searchHits(doc, 1));
+
+        service.search(req);
+
+        ArgumentCaptor<org.springframework.data.elasticsearch.core.query.Query> queryCaptor =
+                ArgumentCaptor.forClass(org.springframework.data.elasticsearch.core.query.Query.class);
+        verify(elasticsearchOperations).search(queryCaptor.capture(), eq(ProductDocument.class));
+        NativeQuery nativeQuery = (NativeQuery) queryCaptor.getValue();
+        String queryJson = nativeQuery.getQuery().toString();
+        assertThat(queryJson)
+                .contains("category")
+                .contains("footwear")
+                .contains("brand")
+                .contains("nike")
+                .contains("price")
+                .contains("stockQuantity")
+                .contains("color")
+                .contains("black")
+                .contains("type")
+                .contains("running")
+                .contains("fit")
+                .contains("regular")
+                .contains("material")
+                .contains("mesh");
+    }
+
+    @Test
     void indexProductFromPayload_generatesSearchEmbedding() {
         ProductSearchRepository repo = mock(ProductSearchRepository.class);
         SearchCache cache = mock(SearchCache.class);

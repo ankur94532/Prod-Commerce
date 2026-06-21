@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres:
     image: postgres:16
@@ -59,10 +57,12 @@ services:
       context: ./backend/embedding-service
     container_name: ecommerce-embedding-service
     environment:
+      EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH:-/models/bge-small-en-v1.5}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-BAAI/bge-small-en-v1.5}
     ports:
       - "8090:8090"
     volumes:
+      - ./models:/models:ro
       - embedding-cache:/root/.cache/huggingface
 
   prometheus:
@@ -72,6 +72,51 @@ services:
       - "9090:9090"
     volumes:
       - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.63.0
+    container_name: ecommerce-jaeger
+    ports:
+      - "16686:16686"
+      - "4317"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    container_name: ecommerce-otel-collector
+    command: ["--config=/etc/otelcol-contrib/config.yml"]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./ops/otel/otel-collector-config.yml:/etc/otelcol-contrib/config.yml:ro
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.2.1
+    container_name: ecommerce-loki
+    command: ["-config.file=/etc/loki/config.yml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./ops/loki/loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.2.1
+    container_name: ecommerce-promtail
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./ops/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
     restart: unless-stopped
 
   grafana:
@@ -84,8 +129,11 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
     restart: unless-stopped
 
 volumes:
   pgdata:
   embedding-cache:
+  loki-data:

@@ -18,9 +18,7 @@ export function AuthProvider({ children }) {
     }
 
     try {
-      //console.log("stringified tokens:", stored);
       const parsed = JSON.parse(stored);
-      //console.log("parsed tokens:", parsed);
 
       setTokens(parsed);
 

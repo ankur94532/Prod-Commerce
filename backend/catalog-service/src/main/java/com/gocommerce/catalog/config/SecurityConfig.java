@@ -47,6 +47,7 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/products/**").permitAll()
                         .requestMatchers("/api/v1/internal/**").permitAll()
                         .requestMatchers("/api/v1/admin/**").authenticated()
@@ -112,6 +113,7 @@ public class SecurityConfig {
             String method = request.getMethod();
 
             if (path.startsWith("/actuator")) return true;
+            if (path.startsWith("/v3/api-docs") || path.startsWith("/swagger-ui")) return true;
             if (path.startsWith("/api/v1/internal/")) return true;
             return "GET".equals(method) && path.startsWith("/api/v1/products");
         }

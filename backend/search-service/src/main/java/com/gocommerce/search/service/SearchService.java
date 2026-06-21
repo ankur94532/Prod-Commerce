@@ -2,6 +2,7 @@ package com.gocommerce.search.service;
 
 import com.gocommerce.search.cache.SearchCache;
 import com.gocommerce.search.client.CatalogClient;
+import com.gocommerce.search.client.CatalogClient.CatalogProductPage;
 import com.gocommerce.search.config.ProductIndexSettings;
 import com.gocommerce.search.config.SearchProperties;
 import com.gocommerce.search.dto.SearchDtos.SearchRequest;
@@ -17,6 +18,7 @@ import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.json.JsonData;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -106,6 +108,7 @@ public class SearchService {
     private final SearchMetrics searchMetrics;
     private final ProductEmbeddingService embeddingService;
     private final SearchProperties searchProperties;
+    private final int indexingBatchSize;
 
     @Autowired
     public SearchService(ProductSearchRepository productSearchRepository,
@@ -122,6 +125,7 @@ public class SearchService {
         this.searchMetrics = searchMetrics;
         this.embeddingService = embeddingService;
         this.searchProperties = searchProperties != null ? searchProperties : new SearchProperties();
+        this.indexingBatchSize = Math.max(1, this.searchProperties.getIndexing().getBatchSize());
     }
 
     public SearchService(ProductSearchRepository productSearchRepository,
@@ -153,6 +157,7 @@ public class SearchService {
     }
 
     @CircuitBreaker(name = "searchCore", fallbackMethod = "searchFallback")
+    @Retry(name = "searchCore")
     public SearchResponse search(SearchRequest request) {
         String query = request.query();
         String categoryFilter = request.category();
@@ -536,27 +541,48 @@ public class SearchService {
             indexOps.create(ProductIndexSettings.settings());
             indexOps.putMapping(indexOps.createMapping(ProductDocument.class));
 
-            List<Map<String, Object>> products = catalogClient.fetchAllProducts();
-            List<ProductDocument> docs = products.stream()
-                    .map(this::toDocument)
-                    .filter(d -> d.getId() != null && !d.getId().isBlank())
-                    .toList();
+            int indexed = 0;
+            int catalogProducts = 0;
+            int page = 0;
+            int totalPages = 1;
+            long expectedCatalogProducts = 0L;
 
-            productSearchRepository.saveAll(docs);
+            do {
+                CatalogProductPage productPage = catalogClient.fetchProductsPage(page, CatalogClient.DEFAULT_PAGE_SIZE);
+                List<Map<String, Object>> products = productPage.products();
+                totalPages = Math.max(productPage.totalPages(), page + 1);
+                expectedCatalogProducts = Math.max(expectedCatalogProducts, productPage.totalElements());
+                catalogProducts += products.size();
+
+                for (int start = 0; start < products.size(); start += indexingBatchSize) {
+                    int end = Math.min(start + indexingBatchSize, products.size());
+                    List<ProductDocument> docs = toDocuments(products.subList(start, end));
+                    if (!docs.isEmpty()) {
+                        productSearchRepository.saveAll(docs);
+                        indexed += docs.size();
+                    }
+                }
+
+                long expectedTotal = expectedCatalogProducts > 0 ? expectedCatalogProducts : catalogProducts;
+                log.info("Reindex progress: indexed {}/{} catalog products (page {}/{})",
+                        indexed, expectedTotal, page + 1, totalPages);
+                page++;
+            } while (page < totalPages);
+
             indexOps.refresh();
             long indexedDocuments = productSearchRepository.count();
             clearSearchCache();
 
-            ReindexResult result = ReindexResult.success(docs.size(), products.size(), indexedDocuments);
+            ReindexResult result = ReindexResult.success(indexed, catalogProducts, indexedDocuments);
             if (result.consistent()) {
-                log.info("Reindexed {} products into Elasticsearch", docs.size());
+                log.info("Reindexed {} products into Elasticsearch", indexed);
             } else {
                 log.warn("Search reindex consistency mismatch: catalogProducts={}, indexed={}, indexedDocuments={}",
-                        products.size(), docs.size(), indexedDocuments);
+                        catalogProducts, indexed, indexedDocuments);
             }
 
             if (searchMetrics != null) {
-                searchMetrics.onReindexCompleted(docs.size());
+                searchMetrics.onReindexCompleted(indexed);
             }
 
             return result;
@@ -637,7 +663,35 @@ public class SearchService {
 
     // ---------------- helpers ----------------
 
+    private List<ProductDocument> toDocuments(List<Map<String, Object>> products) {
+        List<ProductDocument> docs = new ArrayList<>();
+        List<String> embeddingTexts = new ArrayList<>();
+        for (Map<String, Object> product : products) {
+            ProductDocument doc = toDocumentWithoutEmbedding(product);
+            if (doc.getId() == null || doc.getId().isBlank()) {
+                continue;
+            }
+            docs.add(doc);
+            embeddingTexts.add(firstNonBlank(doc.getSearchText(), ""));
+        }
+
+        List<List<Float>> embeddings = embeddingService.embedAll(embeddingTexts);
+        if (embeddings.size() != docs.size()) {
+            throw new IllegalStateException("Embedding count mismatch: expected " + docs.size() + " but got " + embeddings.size());
+        }
+        for (int i = 0; i < docs.size(); i++) {
+            docs.get(i).setSearchEmbedding(embeddings.get(i));
+        }
+        return docs;
+    }
+
     private ProductDocument toDocument(Map<String, Object> p) {
+        ProductDocument document = toDocumentWithoutEmbedding(p);
+        document.setSearchEmbedding(embeddingService.embed(firstNonBlank(document.getSearchText(), "")));
+        return document;
+    }
+
+    private ProductDocument toDocumentWithoutEmbedding(Map<String, Object> p) {
         String id = asString(p.get("id"));
         if (id == null) {
             id = asString(p.get("_id"));
@@ -680,7 +734,7 @@ public class SearchService {
                 asString(p.get("embeddingText")),
                 buildSearchText(name, description, brand, category, tags, attributes));
 
-        ProductDocument document = new ProductDocument(
+        return new ProductDocument(
                 id,
                 slug,
                 name,
@@ -702,8 +756,6 @@ public class SearchService {
                 searchText,
                 0L
         );
-        document.setSearchEmbedding(embeddingService.embed(searchText));
-        return document;
     }
 
     private static String asString(Object o) {

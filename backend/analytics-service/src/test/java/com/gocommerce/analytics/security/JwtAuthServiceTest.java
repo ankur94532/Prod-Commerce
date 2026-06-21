@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JwtAuthServiceTest {
 
@@ -42,7 +43,7 @@ class JwtAuthServiceTest {
     }
 
     @Test
-    void parseToken_withInvalidSignature_fallsBackToUnsignedDecode() {
+    void parseToken_withInvalidSignature_rejectsToken() {
         // Service uses secretA
         String secretA = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         JwtAuthProperties propsService = new JwtAuthProperties();
@@ -61,11 +62,7 @@ class JwtAuthServiceTest {
                 .signWith(keyForToken, SignatureAlgorithm.HS256)
                 .compact();
 
-        // Signature verification fails → service falls back to unsafe decode
-        AuthUser authUser = service.parseToken(token);
-
-        assertThat(authUser.id()).isEqualTo("user-2");
-        assertThat(authUser.email()).isEqualTo("user2@example.com");
-        assertThat(authUser.role()).isEqualTo("USER");
+        assertThatThrownBy(() -> service.parseToken(token))
+                .isInstanceOf(io.jsonwebtoken.JwtException.class);
     }
 }

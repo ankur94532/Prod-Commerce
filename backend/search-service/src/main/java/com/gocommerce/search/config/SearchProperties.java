@@ -6,9 +6,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class SearchProperties {
 
     private final Hybrid hybrid = new Hybrid();
+    private final Indexing indexing = new Indexing();
 
     public Hybrid getHybrid() {
         return hybrid;
+    }
+
+    public Indexing getIndexing() {
+        return indexing;
     }
 
     public static class Hybrid {
@@ -29,6 +34,18 @@ public class SearchProperties {
 
         public void setVectorWeight(double vectorWeight) {
             this.vectorWeight = vectorWeight;
+        }
+    }
+
+    public static class Indexing {
+        private int batchSize = 128;
+
+        public int getBatchSize() {
+            return batchSize;
+        }
+
+        public void setBatchSize(int batchSize) {
+            this.batchSize = batchSize;
         }
     }
 }

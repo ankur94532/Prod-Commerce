@@ -25,9 +25,14 @@ embedding:
   dimensions: ${EMBEDDING_DIMENSIONS:384}
 
 search:
+  http:
+    connect-timeout: ${SEARCH_HTTP_CONNECT_TIMEOUT:2s}
+    read-timeout: ${SEARCH_HTTP_READ_TIMEOUT:5s}
   hybrid:
     keyword-weight: ${SEARCH_HYBRID_KEYWORD_WEIGHT:1.0}
     vector-weight: ${SEARCH_HYBRID_VECTOR_WEIGHT:1.5}
+  indexing:
+    batch-size: ${SEARCH_INDEXING_BATCH_SIZE:128}
 
 management:
   endpoints:
@@ -48,6 +53,18 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+  tracing:
+    sampling:
+      probability: ${MANAGEMENT_TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
 
 resilience4j:
   circuitbreaker:
@@ -70,6 +87,15 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 5
         automatic-transition-from-open-to-half-open-enabled: true
 
+      recommendationClient:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+
       reindexJob:
         register-health-indicator: true
         sliding-window-type: COUNT_BASED
@@ -78,3 +104,28 @@ resilience4j:
         wait-duration-in-open-state: 20s
         permitted-number-of-calls-in-half-open-state: 3
         automatic-transition-from-open-to-half-open-enabled: true
+  retry:
+    instances:
+      catalogClient:
+        max-attempts: 3
+        wait-duration: 250ms
+        retry-exceptions:
+          - java.io.IOException
+          - java.net.SocketTimeoutException
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
+      recommendationClient:
+        max-attempts: 2
+        wait-duration: 150ms
+        retry-exceptions:
+          - java.io.IOException
+          - java.net.SocketTimeoutException
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
+      searchCore:
+        max-attempts: 2
+        wait-duration: 100ms
+        retry-exceptions:
+          - java.io.IOException
+          - java.net.SocketTimeoutException
+          - org.springframework.dao.TransientDataAccessException

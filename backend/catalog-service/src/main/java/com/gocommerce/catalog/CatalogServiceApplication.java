@@ -7,6 +7,7 @@ import com.gocommerce.catalog.seed.ProductSeedCatalog;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 
 import java.util.TimeZone;
@@ -20,10 +21,11 @@ public class CatalogServiceApplication {
     }
 
     @Bean
-    CommandLineRunner seedProducts(ProductRepository productRepository) {
+    CommandLineRunner seedProducts(ProductRepository productRepository,
+                                   @Value("${catalog.seed.size:1000}") int seedSize) {
         return args -> {
             int saved = 0;
-            for (Product seedProduct : ProductSeedCatalog.products()) {
+            for (Product seedProduct : ProductSeedCatalog.products(seedSize)) {
                 Product product = productRepository.findBySlug(seedProduct.getSlug())
                         .orElseGet(Product::new);
 

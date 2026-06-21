@@ -2,6 +2,7 @@ package com.gocommerce.search.service;
 
 import com.gocommerce.search.cache.SearchCache;
 import com.gocommerce.search.client.CatalogClient;
+import com.gocommerce.search.client.CatalogClient.CatalogProductPage;
 import com.gocommerce.search.config.CatalogProperties;
 import com.gocommerce.search.model.ProductDocument;
 import com.gocommerce.search.repository.ProductSearchRepository;
@@ -57,6 +58,14 @@ class SearchServiceReindexTest {
         @Override
         public List<Map<String, Object>> fetchAllProducts() {
             return products;
+        }
+
+        @Override
+        public CatalogProductPage fetchProductsPage(int page, int size) {
+            if (page > 0) {
+                return new CatalogProductPage(List.of(), page, size, 1, products.size());
+            }
+            return new CatalogProductPage(products, page, size, 1, products.size());
         }
     }
 
@@ -134,7 +143,7 @@ class SearchServiceReindexTest {
         int count = searchService.reindexProducts();
 
         assertEquals(0, count);
-        verify(productSearchRepository).saveAll(anyList());
+        verify(productSearchRepository, never()).saveAll(anyList());
         verify(searchCache).clear();
     }
 }

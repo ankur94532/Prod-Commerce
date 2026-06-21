@@ -39,7 +39,9 @@ k8s/secrets.yaml
 models/
 backend/search-service/scripts/generated-queries.jsonl
 backend/search-service/scripts/*-results.json
+backend/search-service/scripts/*-results.md
 backend/search-service/scripts/*-report.json
+backend/search-service/scripts/*-report.md
 
 # Python cache
 __pycache__/

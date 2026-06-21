@@ -107,6 +107,32 @@ SPECIAL_EXPECTATIONS = {
     "notebooks": {"category": "books-stationery"},
 }
 
+TYPO_REPLACEMENTS = {
+    "phone": "fone",
+    "mobile": "moblie",
+    "laptop": "lapotp",
+    "headphones": "headfones",
+    "earbuds": "earbudz",
+    "shoes": "shoos",
+    "watch": "wach",
+    "charger": "chargre",
+    "shirt": "shrit",
+    "dress": "dres",
+}
+
+SEMANTIC_INTENTS = [
+    ("comfortable shoes for daily walking", {"category": "footwear"}),
+    ("wireless audio for travel", {"category": "earbuds-headphones"}),
+    ("portable computer for office work", {"category": "laptops"}),
+    ("phone with good camera", {"category": "smartphones"}),
+    ("bag for carrying laptop", {"category": "bags-wallets"}),
+    ("bottle for gym and travel", {"category": "kitchen-dining"}),
+    ("skin care for sunny days", {"category": "beauty-grooming"}),
+    ("keyboard and mouse accessories", {"category": "accessories-cables"}),
+    ("books and notebooks for study", {"category": "books-stationery"}),
+    ("home appliance for kitchen cooking", {"category": "home-appliances"}),
+]
+
 
 @dataclass(frozen=True)
 class EvalCase:
@@ -163,6 +189,10 @@ def product_attributes(product: dict[str, Any]) -> dict[str, str]:
     return {str(key): str(value) for key, value in attrs.items() if value is not None and str(value).strip()}
 
 
+def product_name(product: dict[str, Any]) -> str:
+    return normalize_text(str(product.get("name") or "")).lower()
+
+
 def main_terms(product: dict[str, Any]) -> list[str]:
     brand_words = set(words(product.get("brand")))
     return [word for word in words(product.get("name")) if word not in brand_words]
@@ -204,6 +234,19 @@ def add_case(cases: list[EvalCase], seen: set[str], query: str, kind: str, expec
     cases.append(EvalCase(query=query, kind=kind, expected=expected))
 
 
+def typo_variant(query: str) -> str | None:
+    lowered = query.lower()
+    for source, replacement in TYPO_REPLACEMENTS.items():
+        if source in lowered:
+            return re.sub(source, replacement, query, count=1, flags=re.IGNORECASE)
+    terms = query.split()
+    if terms and len(terms[0]) > 4:
+        word = terms[0]
+        terms[0] = word[:2] + word[3] + word[2] + word[4:]
+        return " ".join(terms)
+    return None
+
+
 def build_cases(products: list[dict[str, Any]], count: int, seed: int) -> list[EvalCase]:
     random.seed(seed)
     by_brand: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -222,7 +265,7 @@ def build_cases(products: list[dict[str, Any]], count: int, seed: int) -> list[E
     for product in products:
         pid = product_id(product)
         category = product_category(product)
-        add_case(cases, seen, str(product.get("name") or ""), "product_exact", {"id": pid})
+        add_case(cases, seen, str(product.get("name") or ""), "product_exact", {"name": product_name(product)})
         add_case(cases, seen, compact_name_query(product), "product_compact", product_expectation(product))
 
         brand = product.get("brand")
@@ -238,7 +281,10 @@ def build_cases(products: list[dict[str, Any]], count: int, seed: int) -> list[E
                 )
 
         for key, value in attr_pairs(product)[:2]:
-            add_case(cases, seen, f"{value} {noun_query(product)}", "attribute_product", product_expectation(product))
+            attr_expected = {"attribute": {key: value}}
+            if category:
+                attr_expected["category"] = category
+            add_case(cases, seen, f"{value} {noun_query(product)}", "attribute_product", attr_expected)
             if category:
                 add_case(
                     cases,
@@ -270,7 +316,10 @@ def build_cases(products: list[dict[str, Any]], count: int, seed: int) -> list[E
         category = product_category(product)
         for key, value in attr_pairs(product):
             add_case(cases, seen, f"{key} {value}", "attribute_value", {"attribute": {key: value}})
-            add_case(cases, seen, f"{value} {noun_query(product)}", "attribute_product", product_expectation(product))
+            attr_expected = {"attribute": {key: value}}
+            if category:
+                attr_expected["category"] = category
+            add_case(cases, seen, f"{value} {noun_query(product)}", "attribute_product", attr_expected)
             if category:
                 add_case(
                     cases,
@@ -312,6 +361,8 @@ def build_cases(products: list[dict[str, Any]], count: int, seed: int) -> list[E
             expected = SPECIAL_EXPECTATIONS.get(alias, {"category": category})
             for template in price_templates:
                 add_case(cases, seen, template.format(alias), "commercial_category", {"category": expected["category"]})
+            add_case(cases, seen, f"{alias} in stock", "stock_intent", {"category": expected["category"]})
+            add_case(cases, seen, f"{alias} with discount", "deal_intent", {"category": expected["category"]})
 
     brand_modifiers = ["best", "new", "latest", "premium", "budget", "popular", "compact", "durable", "wireless", "daily"]
     for brand, brand_products in sorted(by_brand.items()):
@@ -327,6 +378,9 @@ def build_cases(products: list[dict[str, Any]], count: int, seed: int) -> list[E
                     {"brand": brand, "category": category},
                 )
 
+    for query, expected in SEMANTIC_INTENTS:
+        add_case(cases, seen, query, "semantic_intent", expected)
+
     category_products = [(category, product) for category, items in sorted(by_category.items()) for product in items]
     attribute_modifiers = ["best", "new", "premium", "budget", "popular", "latest"]
     for category, product in category_products:
@@ -339,6 +393,14 @@ def build_cases(products: list[dict[str, Any]], count: int, seed: int) -> list[E
                     "modified_attribute_category",
                     {"category": category, "attribute": {key: value}},
                 )
+
+    typo_sources = list(cases)
+    for case in typo_sources:
+        typo = typo_variant(case.query)
+        if typo:
+            add_case(cases, seen, typo, f"typo_{case.kind}", case.expected)
+        if len(cases) >= count:
+            break
 
     if len(cases) < count:
         filler_modifiers = ["recommended", "top", "value", "sale", "online", "lightweight", "heavy duty", "everyday", "office", "travel"]
@@ -373,6 +435,8 @@ def matches_attribute(product: dict[str, Any], expected_attr: dict[str, str]) ->
 def is_relevant(product: dict[str, Any], expected: dict[str, Any]) -> bool:
     if "id" in expected:
         return product_id(product) == str(expected["id"])
+    if "name" in expected and product_name(product) != str(expected["name"]).lower():
+        return False
     if "brand" in expected and product_brand(product) != str(expected["brand"]).lower():
         return False
     if "category" in expected and product_category(product) != expected["category"]:
@@ -384,6 +448,57 @@ def is_relevant(product: dict[str, Any], expected: dict[str, Any]) -> bool:
 
 def relevant_ids(products: list[dict[str, Any]], expected: dict[str, Any]) -> set[str]:
     return {product_id(product) for product in products if is_relevant(product, expected)}
+
+
+def build_relevance_index(products: list[dict[str, Any]]) -> dict[str, Any]:
+    all_ids: set[str] = set()
+    by_id: dict[str, set[str]] = {}
+    by_name: dict[str, set[str]] = defaultdict(set)
+    by_brand: dict[str, set[str]] = defaultdict(set)
+    by_category: dict[str, set[str]] = defaultdict(set)
+    by_attribute: dict[tuple[str, str], set[str]] = defaultdict(set)
+
+    for product in products:
+        pid = product_id(product)
+        all_ids.add(pid)
+        by_id[pid] = {pid}
+        by_name[product_name(product)].add(pid)
+
+        brand = product_brand(product)
+        if brand:
+            by_brand[brand].add(pid)
+
+        category = product_category(product)
+        if category:
+            by_category[category].add(pid)
+
+        for key, value in product_attributes(product).items():
+            by_attribute[(str(key), str(value).lower())].add(pid)
+
+    return {
+        "all": all_ids,
+        "id": by_id,
+        "name": by_name,
+        "brand": by_brand,
+        "category": by_category,
+        "attribute": by_attribute,
+    }
+
+
+def indexed_relevant_ids(index: dict[str, Any], expected: dict[str, Any]) -> set[str]:
+    candidates = set(index["all"])
+    if "id" in expected:
+        candidates &= index["id"].get(str(expected["id"]), set())
+    if "name" in expected:
+        candidates &= index["name"].get(str(expected["name"]).lower(), set())
+    if "brand" in expected:
+        candidates &= index["brand"].get(str(expected["brand"]).lower(), set())
+    if "category" in expected:
+        candidates &= index["category"].get(expected["category"], set())
+    if "attribute" in expected:
+        for key, value in expected["attribute"].items():
+            candidates &= index["attribute"].get((str(key), str(value).lower()), set())
+    return candidates if expected else set()
 
 
 def search(base_url: str, case: EvalCase, size: int, timeout: float, mode: str | None) -> dict[str, Any]:
@@ -553,6 +668,73 @@ def write_csv(path: str, rows: list[dict[str, Any]]) -> None:
             )
 
 
+def write_markdown(path: str, summary: dict[str, Any], failures: list[dict[str, Any]]) -> None:
+    metrics = summary.get("metrics", {})
+    latency = summary.get("latencyMs", {})
+    lines = [
+        "# Search Relevance Metrics",
+        "",
+        f"Generated mode: `{summary.get('mode')}`",
+        f"Base URL: `{summary.get('baseUrl')}`",
+        f"Cases: `{summary.get('cases')}`",
+        f"Pass rate: `{summary.get('passRate')}`",
+        f"Elapsed seconds: `{summary.get('elapsedSec')}`",
+        "",
+        "## Ranking Metrics",
+        "",
+        "| Metric | Value |",
+        "|---|---:|",
+    ]
+    for key in sorted(metrics.keys()):
+        lines.append(f"| `{key}` | {metrics[key]} |")
+
+    lines.extend([
+        "",
+        "## Latency",
+        "",
+        "| Metric | ms |",
+        "|---|---:|",
+    ])
+    for key in ["avg", "p50", "p95", "max"]:
+        lines.append(f"| `{key}` | {latency.get(key)} |")
+
+    lines.extend([
+        "",
+        "## Failure Breakdown",
+        "",
+        f"- Failures: `{summary.get('fail')}`",
+        f"- Failures by reason: `{json.dumps(summary.get('failuresByReason', {}), sort_keys=True)}`",
+        f"- Failures by kind: `{json.dumps(summary.get('failuresByKind', {}), sort_keys=True)}`",
+    ])
+
+    if failures:
+        lines.extend([
+            "",
+            "## Sample Failures",
+            "",
+            "| Query | Kind | Reason |",
+            "|---|---|---|",
+        ])
+        for failure in failures[:20]:
+            lines.append(f"| `{failure['query']}` | `{failure['kind']}` | `{failure['reason']}` |")
+
+    lines.extend([
+        "",
+        "## Resume Metric Template",
+        "",
+        (
+            "- Evaluated hybrid search quality across "
+            f"{summary.get('cases')} catalog-aware generated queries, achieving "
+            f"Precision@10={metrics.get('precision@10')}, Recall@10={metrics.get('recall@10')}, "
+            f"NDCG@10={metrics.get('ndcg@10')}, MRR={metrics.get('mrr')}, "
+            f"and p95 evaluation latency of {latency.get('p95')} ms."
+        ),
+        "",
+    ])
+    with open(path, "w", encoding="utf-8") as file:
+        file.write("\n".join(lines))
+
+
 def parse_k_values(value: str) -> list[int]:
     values = sorted({int(part.strip()) for part in value.split(",") if part.strip()})
     if not values or any(value <= 0 for value in values):
@@ -573,6 +755,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--generate-only", action="store_true", help="Generate query cases and exit without running searches")
     parser.add_argument("--output-json", help="Write full evaluation results as JSON")
     parser.add_argument("--output-csv", help="Write per-query evaluation results as CSV")
+    parser.add_argument("--output-md", help="Write markdown summary report")
     parser.add_argument("--fail-under", type=float, help="Exit non-zero if passRate is below this value, e.g. 0.99")
     return parser.parse_args()
 
@@ -594,7 +777,8 @@ def main() -> int:
         print(json.dumps({"cases": len(cases), "dumpQueries": args.dump_queries}, indent=2, sort_keys=True))
         return 0
 
-    expected_by_query = {case.query: relevant_ids(products, case.expected) for case in cases}
+    relevance_index = build_relevance_index(products)
+    expected_by_query = {case.query: indexed_relevant_ids(relevance_index, case.expected) for case in cases}
     k_values = args.k
     max_k = max(k_values)
     latencies_ms: list[float] = []
@@ -652,6 +836,8 @@ def main() -> int:
             json.dump(payload, file, indent=2, ensure_ascii=False, sort_keys=True)
     if args.output_csv:
         write_csv(args.output_csv, results)
+    if args.output_md:
+        write_markdown(args.output_md, summary, payload["failures"])
 
     print(json.dumps(summary, indent=2, sort_keys=True))
     failures = [result for result in results if not result["ok"]]

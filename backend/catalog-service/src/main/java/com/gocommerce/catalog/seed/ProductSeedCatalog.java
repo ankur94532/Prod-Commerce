@@ -17,6 +17,13 @@ public final class ProductSeedCatalog {
         return expandToTarget(baseProducts(), 1_000);
     }
 
+    public static List<Product> products(int targetCount) {
+        if (targetCount < 1) {
+            throw new IllegalArgumentException("targetCount must be positive");
+        }
+        return expandToTarget(baseProducts(), targetCount);
+    }
+
     private static List<Product> baseProducts() {
         return List.of(
                 p("s26-ultra-256gb-gray", "Galaxy S26 Ultra 256GB (Gray)", "Flagship smartphone with high-end camera and display.", "89999", "smartphones", "Samsung", 50, Map.of("storage", "256GB", "color", "Gray")),
@@ -140,6 +147,9 @@ public final class ProductSeedCatalog {
     }
 
     private static List<Product> expandToTarget(List<Product> baseProducts, int targetCount) {
+        if (targetCount <= baseProducts.size()) {
+            return List.copyOf(baseProducts.subList(0, targetCount));
+        }
         List<Product> products = new ArrayList<>(baseProducts);
         int variantNumber = 1;
         while (products.size() < targetCount) {

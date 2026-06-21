@@ -42,17 +42,33 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,info,prometheus,metrics
   endpoint:
     health:
+      show-details: always
       probes:
         enabled: true
+  health:
+    circuitbreakers:
+      enabled: true
   metrics:
     tags:
       service: order-service
     distribution:
       percentiles-histogram:
         http.server.requests: true
+  tracing:
+    sampling:
+      probability: ${MANAGEMENT_TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
 
 security:
   jwt:
@@ -62,3 +78,49 @@ services:
   catalog:
     base-url: ${CATALOG_SERVICE_URL:http://catalog-service:8082}
     internal-token: ${INTERNAL_SERVICE_TOKEN}
+    connect-timeout: ${CATALOG_CLIENT_CONNECT_TIMEOUT:2s}
+    read-timeout: ${CATALOG_CLIENT_READ_TIMEOUT:4s}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      catalogClient:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+      paymentProvider:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 15s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true
+  retry:
+    instances:
+      catalogClient:
+        max-attempts: 3
+        wait-duration: 200ms
+        retry-exceptions:
+          - java.io.IOException
+          - java.net.SocketTimeoutException
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
+      catalogCompensation:
+        max-attempts: 5
+        wait-duration: 500ms
+        retry-exceptions:
+          - java.io.IOException
+          - java.net.SocketTimeoutException
+          - org.springframework.web.client.ResourceAccessException
+          - org.springframework.web.client.HttpServerErrorException
+      paymentProvider:
+        max-attempts: 2
+        wait-duration: 300ms
+        retry-exceptions:
+          - java.io.IOException
+          - java.net.SocketTimeoutException

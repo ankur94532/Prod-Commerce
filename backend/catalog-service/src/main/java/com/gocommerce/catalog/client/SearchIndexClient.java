@@ -2,11 +2,15 @@ package com.gocommerce.catalog.client;
 
 import com.gocommerce.catalog.entity.Product;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+
+import java.time.Duration;
 
 import java.util.HashMap;
 import java.util.List;
@@ -28,15 +32,20 @@ public class SearchIndexClient {
      * For local dev (boot run), you can override with:
      *   gocommerce.search.base-url=http://localhost:8084
      */
-    public SearchIndexClient(
-            @Value("${gocommerce.search.base-url:http://search-service:8084}") String baseUrl
-    ) {
+    public SearchIndexClient(@Value("${gocommerce.search.base-url:http://search-service:8084}") String baseUrl,
+                             @Value("${gocommerce.search.connect-timeout:2s}") Duration connectTimeout,
+                             @Value("${gocommerce.search.read-timeout:3s}") Duration readTimeout) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(connectTimeout);
+        requestFactory.setReadTimeout(readTimeout);
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
+                .requestFactory(requestFactory)
                 .build();
     }
 
     @CircuitBreaker(name = "searchIndex", fallbackMethod = "indexProductFallback")
+    @Retry(name = "searchIndex")
     public void indexProduct(Product product) {
         if (product == null || product.getId() == null) {
             return;
@@ -54,6 +63,7 @@ public class SearchIndexClient {
     }
 
     @CircuitBreaker(name = "searchIndex", fallbackMethod = "deleteProductFallback")
+    @Retry(name = "searchIndex")
     public void deleteProduct(Long productId) {
         if (productId == null) {
             return;
