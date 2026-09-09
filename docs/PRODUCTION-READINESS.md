@@ -230,10 +230,41 @@ described as exactly that.
 
 ## Standing limitations
 
-- The payment provider is a mock with in-process memory and no settlement reconciliation.
-- No alert reaches a human until Alertmanager has a destination.
-- No SLO has been measured against real traffic.
-- NetworkPolicy is unenforced on the local cluster.
-- One PostgreSQL instance and one Kafka broker: still one failure domain each.
-- WAL archiving has no retention policy; the archive grows without bound.
-- Nothing has been deployed.
+Accurate as of the review on 2026-09-09. Anything not listed here is covered by a test in
+`ops/testing/verify-all.sh`.
+
+**Cannot be closed by writing code**
+
+- **Payments are a mock.** The API is tokenized and refuses card data, but no money moves.
+  A real integration still needs processor webhooks, settlement reconciliation against
+  processor reports, and dispute and chargeback handling. The mock keeps its idempotency
+  records in a JVM map: not shared between replicas, not durable.
+- **Nobody is paged.** Alertmanager routes by severity and reads each receiver's URL from a
+  mounted secret that does not exist. 18 rules fire into a void until a real destination is
+  wired and a test alert is observed arriving.
+- **No SLO has been measured.** `docs/SLO.md` states intended objectives. The load harness
+  is verified but has never been run against the application, so no latency or throughput
+  figure here is an observation.
+- **No graded relevance evaluation.** The harness, rubric and 28-query set are built and
+  tested; `queries.v1.json` is AI-authored and unjudged. This needs human judgement, or an
+  explicitly AI-labelled run reported as exactly that. Do not invent labels.
+- **Nothing has been deployed.** Staging and production overlays and an ordered deploy
+  procedure exist and validate; no cluster has run them.
+
+**Environment-dependent**
+
+- **NetworkPolicy is unenforced on the local cluster.** Verified by
+  `ops/testing/networkpolicy-enforcement.sh`: a default-deny policy was applied and traffic
+  still flowed. The manifests are inert until an enforcing CNI is installed. Re-run that
+  script on any cluster before relying on them.
+- **One PostgreSQL instance and one Kafka broker.** Still one failure domain each.
+  `docs/PRODUCTION-TOPOLOGY.md` describes the target; the manifests do not build it.
+
+**Known gaps with no test**
+
+- Backups are scheduled (`k8s/backup/cronjob.yaml`) and retention is enforced and tested,
+  but the volume sits in the same cluster as the database. That is not an offsite copy, and
+  no RPO or RTO is claimed.
+- No chaos or fault-injection testing, no performance regression gate, no coverage floor.
+- Resource requests and limits are guesses; there is no capacity or cost model.
+- No on-call rotation. The runbooks in `docs/runbooks/` exist but nobody owns them.
