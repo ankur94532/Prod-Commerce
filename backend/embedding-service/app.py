@@ -4,14 +4,13 @@ from typing import Any
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
-from sentence_transformers import SentenceTransformer
 
 
 MODEL_PATH = os.getenv("EMBEDDING_MODEL_PATH", "/models/bge-small-en-v1.5")
 MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "BAAI/bge-small-en-v1.5")
 
 app = FastAPI(title="Prod-Commerce Embedding Service")
-model: SentenceTransformer | None = None
+model: Any | None = None
 loaded_model_source = MODEL_NAME
 
 
@@ -29,6 +28,9 @@ class EmbeddingResponse(BaseModel):
 @app.on_event("startup")
 def load_model() -> None:
     global model, loaded_model_source
+    # Keep the heavyweight inference dependency out of schema/controller-only tests.
+    from sentence_transformers import SentenceTransformer
+
     source = MODEL_PATH if MODEL_PATH and Path(MODEL_PATH).exists() else MODEL_NAME
     loaded_model_source = source
     model = SentenceTransformer(source)

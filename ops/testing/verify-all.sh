@@ -59,6 +59,7 @@ run "Checkout reliability (PostgreSQL)" ops/testing/checkout-reliability.sh
 run "Database role isolation"           ops/testing/database-isolation.sh
 run "Database role migration"           ops/testing/database-role-migration.sh
 run "Schema migration job"              ops/testing/migration-job.sh
+run "Consumer-driven HTTP contracts"    ops/testing/contracts.sh
 run "Search retrieval (Elasticsearch)"  ops/testing/search-retrieval.sh
 run "Graded evaluation harness"         ops/testing/search-evaluation.sh
 run "Load-test harness"                 ops/testing/load-harness.sh

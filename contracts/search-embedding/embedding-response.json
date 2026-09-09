@@ -1,0 +1,6 @@
+{
+  "embeddings": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+  "dimensions": 3,
+  "model": "synthetic-contract-model",
+  "usage": {"texts": 2}
+}

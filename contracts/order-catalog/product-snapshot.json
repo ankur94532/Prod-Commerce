@@ -1,0 +1,13 @@
+{
+  "id": 42,
+  "slug": "acme-commuter-headset",
+  "name": "Acme Commuter Headset",
+  "description": "Synthetic contract fixture",
+  "price": 1299.00,
+  "currency": "INR",
+  "categorySlug": "earbuds-headphones",
+  "brand": "Acme",
+  "imageUrls": ["https://example.invalid/products/42.png"],
+  "stockQuantity": 7,
+  "attributes": {"color": "black", "material": "mesh"}
+}

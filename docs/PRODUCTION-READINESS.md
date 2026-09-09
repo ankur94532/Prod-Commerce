@@ -4,7 +4,7 @@ Verification completed 2026-09-09. **Nothing was deployed**, and the running loc
 was not modified. Evidence:
 [`evidence/production-readiness-2026-09-09.json`](evidence/production-readiness-2026-09-09.json).
 
-Run everything with `ops/testing/verify-all.sh` (sixteen steps, all passing).
+Run everything with `ops/testing/verify-all.sh` (seventeen steps, all passing).
 
 | Suite | Command | Result |
 | --- | --- | --- |
@@ -13,7 +13,8 @@ Run everything with `ops/testing/verify-all.sh` (sixteen steps, all passing).
 | Database role isolation | `ops/testing/database-isolation.sh` | 26 checks |
 | Database role migration | `ops/testing/database-role-migration.sh` | 23 checks |
 | Schema migration job | `ops/testing/migration-job.sh` | 4 lifecycle checks |
-| Search Elasticsearch contracts | `ops/testing/search-retrieval.sh` | 18 executions |
+| Consumer-driven HTTP contracts | `ops/testing/contracts.sh` | 4 boundaries, both sides |
+| Search Elasticsearch contracts | `ops/testing/search-retrieval.sh` | 22 executions |
 | Graded evaluation harness | `ops/testing/search-evaluation.sh` | 104 tests |
 | Load-test harness | `ops/testing/load-harness.sh` | regimes, accounting, determinism |
 | Point-in-time recovery | `ops/backup/pitr-drill.sh` | restore to an instant, verified |
