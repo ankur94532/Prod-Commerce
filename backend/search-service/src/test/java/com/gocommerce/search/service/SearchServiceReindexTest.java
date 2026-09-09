@@ -2,7 +2,6 @@ package com.gocommerce.search.service;
 
 import com.gocommerce.search.cache.SearchCache;
 import com.gocommerce.search.client.CatalogClient;
-import com.gocommerce.search.client.CatalogClient.CatalogProductPage;
 import com.gocommerce.search.config.CatalogProperties;
 import com.gocommerce.search.model.ProductDocument;
 import com.gocommerce.search.repository.ProductSearchRepository;
