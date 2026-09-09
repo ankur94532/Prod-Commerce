@@ -3,7 +3,6 @@ package com.gocommerce.search.service;
 import com.gocommerce.search.cache.SearchCache;
 import com.gocommerce.search.client.CatalogClient;
 import com.gocommerce.search.client.CatalogClient.CatalogProductPage;
-import com.gocommerce.search.config.ProductIndexSettings;
 import com.gocommerce.search.config.SearchProperties;
 import com.gocommerce.search.dto.SearchDtos.SearchRequest;
 import com.gocommerce.search.dto.SearchDtos.RetrievalInfo;

@@ -58,10 +58,10 @@
   "suites": [
     {
       "name": "Backend unit and API",
-      "tests": 257,
+      "tests": 241,
       "failures": 0,
       "skipped": 50,
-      "note": "skips are Docker-gated suites run by the scripts below; was 160 before this work began"
+      "note": "skips are Docker-gated suites run by the scripts below; was 160 before this work began. An earlier figure of 257 was wrong: it was summed from surefire reports that had accumulated without a clean build, including reports for test classes since deleted."
     },
     {
       "name": "Checkout reliability (PostgreSQL)",

@@ -8,7 +8,7 @@ Run everything with `ops/testing/verify-all.sh` (fifteen steps, all passing).
 
 | Suite | Command | Result |
 | --- | --- | --- |
-| Backend unit and API | `mvn -f backend/pom.xml test` | 257 tests, 0 failures, 50 Docker-gated skips (was 160) |
+| Backend unit and API | `mvn -f backend/pom.xml test` | 241 tests, 0 failures, 50 Docker-gated skips (was 160) |
 | Checkout reliability | `ops/testing/checkout-reliability.sh` | 36 PostgreSQL + 10 frontend, 0 skips (was 24) |
 | Database role isolation | `ops/testing/database-isolation.sh` | 26 checks |
 | Database role migration | `ops/testing/database-role-migration.sh` | 23 checks |

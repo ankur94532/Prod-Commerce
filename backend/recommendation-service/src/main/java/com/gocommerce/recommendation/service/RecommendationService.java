@@ -4,7 +4,6 @@ import com.gocommerce.recommendation.dto.RecommendationDtos.TrendingProduct;
 import com.gocommerce.recommendation.dto.RecommendationDtos.TrendingResponse;
 import com.gocommerce.recommendation.dto.PopularityDtos.PopularityItem;
 import com.gocommerce.recommendation.dto.PopularityDtos.PopularityResponse;
-import com.gocommerce.recommendation.events.OrderCreatedEvent;
 import com.gocommerce.recommendation.metrics.RecommendationMetrics;
 import com.gocommerce.recommendation.model.ProductStats;
 import com.gocommerce.recommendation.repository.ProductStatsRepository;

@@ -20,10 +20,11 @@
   </properties>
 
   <dependencies>
-        <dependency>
-            <groupId>com.gocommerce</groupId>
-            <artifactId>platform-security</artifactId>
-        </dependency>
+    <dependency>
+      <groupId>com.gocommerce</groupId>
+      <artifactId>platform-security</artifactId>
+    </dependency>
+
     <!-- Web -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

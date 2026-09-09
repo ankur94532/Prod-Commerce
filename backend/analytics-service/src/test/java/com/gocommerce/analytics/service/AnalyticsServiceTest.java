@@ -4,8 +4,6 @@ import com.gocommerce.analytics.model.AnalyticsSummary;
 import com.gocommerce.analytics.repository.AnalyticsSummaryRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-
 import java.math.BigDecimal;
 import java.util.Optional;
 

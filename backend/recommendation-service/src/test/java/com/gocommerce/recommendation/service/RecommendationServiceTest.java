@@ -2,20 +2,16 @@ package com.gocommerce.recommendation.service;
 
 import com.gocommerce.recommendation.dto.RecommendationDtos.TrendingProduct;
 import com.gocommerce.recommendation.dto.RecommendationDtos.TrendingResponse;
-import com.gocommerce.recommendation.events.OrderCreatedEvent;
 import com.gocommerce.recommendation.model.ProductStats;
 import com.gocommerce.recommendation.repository.ProductStatsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
-
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
