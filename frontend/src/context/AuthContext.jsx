@@ -1,72 +1,66 @@
 // src/context/AuthContext.jsx
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { fetchCurrentUser } from "../api/auth";
-
-const AuthContext = createContext(null);
+import { clearTokens, readTokens, writeTokens } from "../auth/session";
+import { AuthContext } from "./authContextValue";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [tokens, setTokens] = useState(null); // { accessToken, refreshToken }
-  const [loading, setLoading] = useState(true);
+  // Restored once, during the first render, so the effect below never has to set state
+  // synchronously just to describe what was already known before mounting.
+  const [tokens, setTokens] = useState(() => readTokens(localStorage));
+  const [loading, setLoading] = useState(() => Boolean(readTokens(localStorage)?.accessToken));
 
-  // on mount, try to restore tokens
+  // Confirm the restored session with the server before treating the user as signed in.
   useEffect(() => {
-    const stored = localStorage.getItem("auth");
-    if (!stored) {
-      setLoading(false);
-      return;
-    }
+    const accessToken = readTokens(localStorage)?.accessToken;
+    if (!accessToken) return undefined;
 
-    try {
-      const parsed = JSON.parse(stored);
-
-      setTokens(parsed);
-
-      const accessToken = parsed?.accessToken;
-      if (!accessToken) {
-        console.warn("No accessToken in stored auth, clearing it");
+    let active = true;
+    fetchCurrentUser(accessToken)
+      .then((u) => {
+        if (active) setUser(u);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Failed to fetch current user:", err);
+        setUser(null);
         setTokens(null);
-        localStorage.removeItem("auth");
-        setLoading(false);
-        return;
-      }
+        clearTokens(localStorage);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
-      // now actually call /me with the token
-      fetchCurrentUser(accessToken)
-        .then((u) => setUser(u))
-        .catch((err) => {
-          console.error("Failed to fetch current user:", err);
-          setUser(null);
-          setTokens(null);
-          localStorage.removeItem("auth");
-        })
-        .finally(() => setLoading(false));
-    } catch (e) {
-      console.error("Failed to parse stored auth tokens:", e);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // The API client signals an unrecoverable session so the UI stops showing a signed-in
+  // state after a refresh token expires or is revoked.
+  useEffect(() => {
+    const onSessionLost = () => {
+      setUser(null);
       setTokens(null);
-      localStorage.removeItem("auth");
-      setLoading(false);
-    }
+    };
+    window.addEventListener("auth:session-lost", onSessionLost);
+    return () => window.removeEventListener("auth:session-lost", onSessionLost);
   }, []);
 
   const login = ({ user, tokens }) => {
     setUser(user);
     setTokens(tokens);
-    // tokens should be { accessToken, refreshToken }
-    localStorage.setItem("auth", JSON.stringify(tokens));
+    writeTokens(localStorage, tokens);
   };
 
   const logout = () => {
     setUser(null);
     setTokens(null);
-    localStorage.removeItem("auth");
+    clearTokens(localStorage);
   };
 
   const value = { user, tokens, loading, login, logout };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  return useContext(AuthContext);
 }

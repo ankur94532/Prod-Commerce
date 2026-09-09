@@ -6,8 +6,11 @@ import com.gocommerce.auth.dto.RegisterRequest;
 import com.gocommerce.auth.entity.User;
 import com.gocommerce.auth.model.Role;
 import com.gocommerce.auth.repository.UserRepository;
-import com.gocommerce.auth.security.JwtProperties;
-import com.gocommerce.auth.security.JwtService;
+import com.gocommerce.platform.security.InvalidTokenException;
+import com.gocommerce.platform.security.JwtIssuer;
+import com.gocommerce.platform.security.JwtProperties;
+import com.gocommerce.platform.security.JwtVerifier;
+import com.gocommerce.platform.security.TokenType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.Duration;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -30,8 +34,9 @@ class AuthServiceTest {
         @Mock
         private PasswordEncoder passwordEncoder;
 
-        // use real JwtService (no mock)
-        private JwtService jwtService;
+        // Real issuer and verifier: token typing is part of what these tests check.
+        private JwtIssuer jwtIssuer;
+        private JwtVerifier jwtVerifier;
 
         private AuthService authService;
 
@@ -40,15 +45,14 @@ class AuthServiceTest {
 
         @BeforeEach
         void setUp() {
-                // Real JwtService with test config
                 JwtProperties props = new JwtProperties();
                 props.setSecret("test_secret_very_long_1234567890");
-                props.setAccessTokenTtlMinutes(60);
-                props.setRefreshTokenTtlDays(30);
-                jwtService = new JwtService(props);
+                props.setAccessTokenTtl(Duration.ofMinutes(60));
+                props.setRefreshTokenTtl(Duration.ofDays(30));
+                jwtIssuer = new JwtIssuer(props);
+                jwtVerifier = new JwtVerifier(props);
 
-                // AuthService with mocks + real JwtService
-                authService = new AuthService(userRepository, passwordEncoder, jwtService);
+                authService = new AuthService(userRepository, passwordEncoder, jwtIssuer, jwtVerifier);
 
                 registerRequest = new RegisterRequest();
                 registerRequest.setEmail("user1@example.com");
@@ -166,5 +170,66 @@ class AuthServiceTest {
 
                 assertEquals("Invalid credentials", ex.getMessage());
                 verify(passwordEncoder, never()).matches(any(), any());
+        }
+
+        private User userWithId(String id) {
+                return new User("user1@example.com", "encoded_pw", "User One", Role.USER) {
+                        @Override
+                        public String getId() {
+                                return id;
+                        }
+                };
+        }
+
+        @Test
+        void issuedTokensAreTypedAndTheRefreshTokenIsNotAnAccessToken() {
+                when(userRepository.findByEmail(loginRequest.getEmail()))
+                                .thenReturn(Optional.of(userWithId("user-1")));
+                when(passwordEncoder.matches("password123", "encoded_pw")).thenReturn(true);
+
+                AuthResponse response = authService.login(loginRequest);
+                String access = response.getTokens().getAccessToken();
+                String refresh = response.getTokens().getRefreshToken();
+
+                assertEquals(TokenType.ACCESS, jwtVerifier.verify(access, TokenType.ACCESS).type());
+                assertEquals(TokenType.REFRESH, jwtVerifier.verify(refresh, TokenType.REFRESH).type());
+                assertThrows(InvalidTokenException.class, () -> jwtVerifier.verify(refresh, TokenType.ACCESS));
+                assertNull(jwtVerifier.verify(refresh, TokenType.REFRESH).role());
+        }
+
+        @Test
+        void refresh_exchangesAValidRefreshTokenForANewPair() {
+                User user = userWithId("user-1");
+                when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+
+                AuthResponse response = authService.refresh(jwtIssuer.refreshToken("user-1"));
+
+                assertNotNull(response.getTokens().getAccessToken());
+                assertNotNull(response.getTokens().getRefreshToken());
+                assertEquals("USER", jwtVerifier.verify(response.getTokens().getAccessToken(), TokenType.ACCESS).role());
+        }
+
+        @Test
+        void refresh_refusesAnAccessTokenPresentedInPlaceOfARefreshToken() {
+                String access = jwtIssuer.accessToken("user-1", "user1@example.com", "User One", "USER");
+
+                IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                                () -> authService.refresh(access));
+
+                assertEquals("Invalid refresh token", error.getMessage());
+                verify(userRepository, never()).findById(any());
+        }
+
+        @Test
+        void refresh_refusesGarbageAndUnknownUsersIdentically() {
+                assertEquals("Invalid refresh token",
+                                assertThrows(IllegalArgumentException.class, () -> authService.refresh("nonsense"))
+                                                .getMessage());
+
+                when(userRepository.findById("ghost")).thenReturn(Optional.empty());
+                assertEquals("Invalid refresh token",
+                                assertThrows(IllegalArgumentException.class,
+                                                () -> authService.refresh(jwtIssuer.refreshToken("ghost")))
+                                                .getMessage());
         }
 }

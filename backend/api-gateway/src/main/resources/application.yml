@@ -95,7 +95,15 @@ spring:
           predicates:
             - Path=/api/v1/recommendations/**
 
+security:
+  jwt:
+    secret: ${SECURITY_JWT_SECRET}
+
 management:
+  # Actuator moves to its own port in deployed environments so the public ingress, which
+  # forwards "/" to this gateway, cannot reach /actuator/prometheus at all.
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:${SERVER_PORT:8080}}
   endpoints:
     web:
       exposure:

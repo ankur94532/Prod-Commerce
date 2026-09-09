@@ -16,6 +16,10 @@
     <description>API Gateway for GoCommerce</description>
 
     <dependencies>
+        <dependency>
+            <groupId>com.gocommerce</groupId>
+            <artifactId>platform-security</artifactId>
+        </dependency>
         <!-- Spring Cloud Gateway (reactive) -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>

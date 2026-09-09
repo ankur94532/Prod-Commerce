@@ -2,6 +2,9 @@ package com.gocommerce.auth.security;
 
 import com.gocommerce.auth.entity.User;
 import com.gocommerce.auth.model.Role;
+import com.gocommerce.platform.security.JwtIssuer;
+import com.gocommerce.platform.security.JwtProperties;
+import com.gocommerce.platform.security.JwtVerifier;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletResponse;
@@ -20,7 +23,8 @@ import static org.mockito.Mockito.*;
 
 class JwtAuthenticationFilterTest {
 
-    private JwtService jwtService;
+    private JwtIssuer jwtIssuer;
+    private JwtVerifier jwtVerifier;
     private CustomUserDetailsService userDetailsService;
     private JwtAuthenticationFilter filter;
 
@@ -31,7 +35,8 @@ class JwtAuthenticationFilterTest {
     void setUp() {
         JwtProperties props = new JwtProperties();
         props.setSecret("test_secret_very_long_1234567890");
-        jwtService = new JwtService(props);
+        jwtIssuer = new JwtIssuer(props);
+        jwtVerifier = new JwtVerifier(props);
 
         testUser = new User("user@example.com", "hash", "Test User", Role.USER) {
             @Override
@@ -54,7 +59,7 @@ class JwtAuthenticationFilterTest {
             }
         };
 
-        filter = new JwtAuthenticationFilter(jwtService, userDetailsService);
+        filter = new JwtAuthenticationFilter(jwtVerifier, userDetailsService);
         SecurityContextHolder.clearContext();
     }
 
@@ -77,7 +82,7 @@ class JwtAuthenticationFilterTest {
 
     @Test
     void doFilter_setsAuthentication_whenValidBearerTokenPresent() throws ServletException, IOException {
-        String token = jwtService.generateAccessToken(testUser);
+        String token = jwtIssuer.accessToken("user-123", testUser.getEmail(), testUser.getFullName(), "USER");
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/auth/me");
         request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
@@ -99,6 +104,32 @@ class JwtAuthenticationFilterTest {
     void doFilter_clearsContextOnInvalidToken_butContinuesChain() throws ServletException, IOException {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/auth/me");
         request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer invalid-token");
+        HttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilterInternal(request, response, chain);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        verify(chain).doFilter(request, response);
+    }
+
+    @Test
+    void doFilter_refusesARefreshTokenPresentedAsABearerCredential() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/auth/me");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + jwtIssuer.refreshToken("user-123"));
+        HttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilterInternal(request, response, chain);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        verify(chain).doFilter(request, response);
+    }
+
+    @Test
+    void doFilter_ignoresANonBearerAuthorizationHeader() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/auth/me");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Basic dXNlcjpwYXNz");
         HttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
 

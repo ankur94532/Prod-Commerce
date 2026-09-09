@@ -18,6 +18,10 @@
     <description>Auth service for GoCommerce</description>
 
     <dependencies>
+        <dependency>
+            <groupId>com.gocommerce</groupId>
+            <artifactId>platform-security</artifactId>
+        </dependency>
         <!-- Basic web + JSON REST -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

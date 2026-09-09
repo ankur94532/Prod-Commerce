@@ -4,7 +4,7 @@ import com.gocommerce.cart.dto.AddCartItemRequest;
 import com.gocommerce.cart.entity.Cart;
 import com.gocommerce.cart.entity.CartItem;
 import com.gocommerce.cart.metrics.CartMetrics;
-import com.gocommerce.cart.security.AuthenticatedUser;
+import com.gocommerce.platform.security.AuthenticatedUser;
 import com.gocommerce.cart.service.CartService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;

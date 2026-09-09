@@ -2,6 +2,7 @@ package com.gocommerce.auth.web;
 
 import com.gocommerce.auth.dto.AuthResponse;
 import com.gocommerce.auth.dto.LoginRequest;
+import com.gocommerce.auth.dto.RefreshRequest;
 import com.gocommerce.auth.dto.RegisterRequest;
 import com.gocommerce.auth.service.AuthService;
 import com.gocommerce.auth.metrics.AuthMetrics;
@@ -45,5 +46,14 @@ public class AuthController {
             authMetrics.onLoginFailure();
             throw ex;
         }
+    }
+
+    /**
+     * Exchanges a refresh token for a new pair. Without this endpoint the refresh token was
+     * a long-lived credential with no purpose that still authenticated every protected API.
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refresh(@Valid @RequestBody RefreshRequest request) {
+        return ResponseEntity.ok(Map.of("data", authService.refresh(request.getRefreshToken())));
     }
 }

@@ -29,8 +29,9 @@ spring:
 security:
   jwt:
     secret: ${SECURITY_JWT_SECRET}
-    access-token-ttl-minutes: ${SECURITY_JWT_ACCESS_TOKEN_TTL_MINUTES:60}
-    refresh-token-ttl-days: ${SECURITY_JWT_REFRESH_TOKEN_TTL_DAYS:30}
+    # Short access tokens with a refresh endpoint, rather than one long-lived token.
+    access-token-ttl: ${SECURITY_JWT_ACCESS_TOKEN_TTL:15m}
+    refresh-token-ttl: ${SECURITY_JWT_REFRESH_TOKEN_TTL:7d}
 
 management:
   endpoints:
