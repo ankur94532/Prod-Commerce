@@ -1,6 +1,8 @@
 package com.gocommerce.platform.security;
 
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.JwtBuilder;
+import io.jsonwebtoken.SignatureAlgorithm;
 
 import java.time.Instant;
 import java.util.Date;
@@ -17,6 +19,7 @@ public class JwtIssuer {
 
     public JwtIssuer(JwtProperties properties) {
         this.properties = properties;
+        properties.validateForIssuer();
     }
 
     public String accessToken(String subject, String email, String fullName, String role) {
@@ -40,12 +43,17 @@ public class JwtIssuer {
 
     private String sign(String subject, Map<String, Object> claims, java.time.Duration ttl) {
         Instant now = Instant.now();
-        return Jwts.builder()
+        JwtBuilder builder = Jwts.builder()
                 .setSubject(subject)
                 .addClaims(claims)
                 .setIssuedAt(Date.from(now))
-                .setExpiration(Date.from(now.plus(ttl)))
-                .signWith(properties.getSigningKey())
-                .compact();
+                .setExpiration(Date.from(now.plus(ttl)));
+        if (properties.isRsaConfigured()) {
+            return builder
+                    .setHeaderParam("kid", properties.getActiveKeyId())
+                    .signWith(properties.getPrivateKey(), SignatureAlgorithm.RS256)
+                    .compact();
+        }
+        return builder.signWith(properties.getSigningKey()).compact();
     }
 }

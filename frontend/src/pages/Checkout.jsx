@@ -5,7 +5,7 @@ import { useAuth } from "../context/authContextValue.js";
 import { tokenizeCard, PaymentTokenizationError } from "../payments/processor";
 import { getCart, clearCart } from "../api/cart";
 import { createOrder, fetchCheckoutAttempt } from "../api/orders";
-import { submitCheckout, inspectAttempt, startNewAttempt, cleanupPaidCart } from "../checkout/attempt";
+import { submitCheckout, inspectAttempt, startNewAttempt, cleanupPaidCart, withCheckoutLock } from "../checkout/attempt";
 
 function Checkout() {
   const { user } = useAuth();
@@ -113,7 +113,7 @@ function Checkout() {
         <Link to="/cart" className="block text-blue-600 underline">Review cart</Link>
         {previousOrder.status === "PAID" && <button className="block text-blue-600 underline" onClick={async () => {
           try {
-            await navigator.locks.request(`checkout:${user.id}`, () => cleanupPaidCart({
+            await withCheckoutLock(user.id, localStorage, () => cleanupPaidCart({
               userId: user.id, items, storage: localStorage, previousOrder, clearCart,
             }));
             navigate("/orders", { state: { checkoutNotice: "Order placed. Cart cleared." } });
@@ -122,7 +122,8 @@ function Checkout() {
         <button className="px-4 py-2 rounded bg-blue-600 text-white" onClick={async () => {
           try {
             if (terminal) {
-              await navigator.locks.request(`checkout:${user.id}`, () => startNewAttempt(user.id, localStorage, previousOrder));
+              await withCheckoutLock(user.id, localStorage,
+                () => startNewAttempt(user.id, localStorage, previousOrder));
               setPreviousOrder(null);
               setPaymentError("");
             } else {
@@ -170,11 +171,10 @@ function Checkout() {
     }
     try {
       const submit = () => submitCheckout({
-        userId: user.id, items, payment: { paymentToken },
+        userId: user.id, items, cartRevision: cart.revision, payment: { paymentToken },
         storage: localStorage, createOrder, clearCart, uuid: () => crypto.randomUUID(),
       });
-      if (!navigator.locks) throw new Error("Checkout requires a browser supporting Web Locks.");
-      const { order, warning } = await navigator.locks.request(`checkout:${user.id}`, submit);
+      const { order, warning } = await withCheckoutLock(user.id, localStorage, submit);
       if (order.status !== "PAID") {
         setPreviousOrder(order);
         setPaymentError(warning);
@@ -212,10 +212,11 @@ function Checkout() {
 
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label className="block text-xs font-medium text-slate-700 mb-1" htmlFor="cc-card-number">
                 Card number
               </label>
               <input
+                id="cc-card-number"
                 type="text"
                 value={cardNumber}
                 onChange={(e) => setCardNumber(e.target.value)}
@@ -226,10 +227,11 @@ function Checkout() {
 
             <div className="flex gap-3">
               <div className="flex-1">
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-medium text-slate-700 mb-1" htmlFor="cc-expiry">
                   Expiry
                 </label>
                 <input
+                  id="cc-expiry"
                   type="text"
                   value={cardExpiry}
                   onChange={(e) => setCardExpiry(e.target.value)}
@@ -238,10 +240,11 @@ function Checkout() {
                 />
               </div>
               <div className="w-24">
-                <label className="block text-xs font-medium text-slate-700 mb-1">
+                <label className="block text-xs font-medium text-slate-700 mb-1" htmlFor="cc-cvc">
                   CVC
                 </label>
                 <input
+                  id="cc-cvc"
                   type="password"
                   value={cardCvc}
                   onChange={(e) => setCardCvc(e.target.value)}

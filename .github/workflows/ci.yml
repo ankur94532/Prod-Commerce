@@ -19,7 +19,7 @@ jobs:
           java-version: "21"
           cache: maven
       - name: Run backend tests
-        run: mvn -f backend/pom.xml test
+        run: mvn -f backend/pom.xml verify
 
   checkout-reliability:
     # These are the failure-path tests: duplicate checkout submissions, idempotent
@@ -70,6 +70,23 @@ jobs:
       - name: Run consumer and provider contract tests
         run: ops/testing/contracts.sh
 
+  deployment-config:
+    name: Deployment configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render base, staging, production, migration, and seed manifests
+        run: |
+          kubectl apply --dry-run=client -k k8s
+          kubectl apply --dry-run=client -k k8s/migrations
+          kubectl apply --dry-run=client -k k8s/seeds
+          kubectl apply --dry-run=client -k deploy/overlays/staging
+          kubectl apply --dry-run=client -k deploy/overlays/staging-migrations
+          kubectl apply --dry-run=client -k deploy/overlays/production
+          kubectl apply --dry-run=client -k deploy/overlays/production-migrations
+      - name: Verify ordered release orchestration
+        run: ops/testing/deploy-procedure.sh
+
   evaluation-harness:
     name: Graded evaluation harness
     runs-on: ubuntu-latest
@@ -98,10 +115,13 @@ jobs:
         run: npm ci
       - name: Run tests
         working-directory: frontend
-        run: node --test "src/**/*.test.js"
+        run: npm test
       - name: Lint
         working-directory: frontend
         run: npm run lint
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+      - name: Audit production dependencies
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high

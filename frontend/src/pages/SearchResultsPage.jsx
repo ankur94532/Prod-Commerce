@@ -27,23 +27,41 @@ export default function SearchResultsPage() {
   const q = searchParams.get("q") || "";
   const page = Number(searchParams.get("page") || 0);
   const size = 12;
-  const filters = useMemo(
-    () => ({
-      category: searchParams.get("category") || "",
-      brand: searchParams.get("brand") || "",
-      minPrice: searchParams.get("minPrice") || "",
-      maxPrice: searchParams.get("maxPrice") || "",
-      inStock: searchParams.get("inStock") === "true",
-      color: searchParams.get("color") || "",
-      type: searchParams.get("type") || "",
-      fit: searchParams.get("fit") || "",
-      storage: searchParams.get("storage") || "",
-      memory: searchParams.get("memory") || "",
-      material: searchParams.get("material") || "",
-      sort: searchParams.get("sort") || "relevance",
-    }),
-    [paramsKey, searchParams]
-  );
+  const filters = useMemo(() => {
+    const params = new URLSearchParams(paramsKey);
+    return {
+      category: params.get("category") || "",
+      brand: params.get("brand") || "",
+      minPrice: params.get("minPrice") || "",
+      maxPrice: params.get("maxPrice") || "",
+      inStock: params.get("inStock") === "true",
+      color: params.get("color") || "",
+      type: params.get("type") || "",
+      fit: params.get("fit") || "",
+      storage: params.get("storage") || "",
+      memory: params.get("memory") || "",
+      material: params.get("material") || "",
+      sort: params.get("sort") || "relevance",
+    };
+  }, [paramsKey]);
+
+  const searchRequest = useMemo(() => ({
+    q,
+    page,
+    size,
+    category: filters.category || undefined,
+    brand: filters.brand || undefined,
+    minPrice: filters.minPrice,
+    maxPrice: filters.maxPrice,
+    inStock: filters.inStock,
+    color: filters.color,
+    type: filters.type,
+    fit: filters.fit,
+    storage: filters.storage,
+    memory: filters.memory,
+    material: filters.material,
+    sort: filters.sort,
+  }), [filters, page, q]);
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -96,23 +114,7 @@ export default function SearchResultsPage() {
     if (!q) return;
 
     let active = true;
-    searchProducts({
-      q,
-      page,
-      size,
-      category: filters.category || undefined,
-      brand: filters.brand || undefined,
-      minPrice: filters.minPrice,
-      maxPrice: filters.maxPrice,
-      inStock: filters.inStock,
-      color: filters.color,
-      type: filters.type,
-      fit: filters.fit,
-      storage: filters.storage,
-      memory: filters.memory,
-      material: filters.material,
-      sort: filters.sort,
-    })
+    searchProducts(searchRequest)
       .then((data) => {
         if (!active) return;
         setItems(data?.items || []);
@@ -137,7 +139,7 @@ export default function SearchResultsPage() {
     return () => {
       active = false;
     };
-  }, [paramsKey]);
+  }, [paramsKey, q, searchRequest]);
 
   useEffect(() => {
     fetchProductFilters({ category: filters.category || undefined })

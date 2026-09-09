@@ -1,6 +1,7 @@
 package com.gocommerce.search.config;
 
 import com.gocommerce.platform.security.InternalServiceAuthenticationFilter;
+import com.gocommerce.platform.security.AdminAuditFilter;
 import com.gocommerce.platform.security.JwtAuthenticationFilter;
 import com.gocommerce.platform.security.JwtProperties;
 import com.gocommerce.platform.security.JwtVerifier;
@@ -59,6 +60,10 @@ public class SecurityConfig {
                         UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new JwtAuthenticationFilter(jwtVerifier),
                         UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new AdminAuditFilter(request ->
+                                "POST".equals(request.getMethod())
+                                        && "/api/v1/search/reindex".equals(request.getRequestURI())),
+                        JwtAuthenticationFilter.class)
                 .build();
     }
 }

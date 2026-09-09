@@ -4,7 +4,7 @@ export function cartFingerprint(items) {
     .sort(([a], [b]) => a.localeCompare(b)));
 }
 
-export async function submitCheckout({ userId, items, payment, storage, createOrder, clearCart, uuid }) {
+export async function submitCheckout({ userId, items, cartRevision, payment, storage, createOrder, clearCart, uuid }) {
   const slot = `checkout-attempt:${userId}`;
   const fingerprint = cartFingerprint(items);
   const saved = storage.getItem(slot);
@@ -13,7 +13,7 @@ export async function submitCheckout({ userId, items, payment, storage, createOr
     throw new Error('Your previous checkout must be resolved first. Restore that cart or check My Orders.');
   }
   if (!attempt) {
-    attempt = { key: uuid(), fingerprint };
+    attempt = { key: uuid(), fingerprint, cartRevision };
     // Fail before sending if durable browser storage is unavailable.
     storage.setItem(slot, JSON.stringify(attempt));
   }
@@ -29,7 +29,7 @@ export async function submitCheckout({ userId, items, payment, storage, createOr
   // From here on, cart/storage failures must never turn a paid order into a checkout failure.
   try { storage.setItem(slot, JSON.stringify({ ...attempt, order })); } catch { /* Original key still replays safely. */ }
   try {
-    await clearCart(userId);
+    await clearCart(userId, attempt.cartRevision);
   } catch {
     return { order, warning: 'Order placed. Your cart could not be cleared; retry checkout to clear it without placing another order.' };
   }
@@ -69,5 +69,37 @@ export async function cleanupPaidCart({ userId, items, storage, previousOrder, c
       || attempt.fingerprint !== cartFingerprint(items)) {
     throw new Error('Cart or checkout changed. Review it before clearing.');
   }
-  await clearCart(userId);
+  await clearCart(userId, attempt.cartRevision);
+}
+
+/** Web Locks when available, with a localStorage lease for older/insecure browsers. */
+export async function withCheckoutLock(userId, storage, operation, browser = globalThis.navigator) {
+  if (browser?.locks?.request) {
+    return browser.locks.request(`checkout:${userId}`, operation);
+  }
+
+  const key = `checkout-lock:${userId}`;
+  const owner = globalThis.crypto?.randomUUID?.()
+    || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    let current;
+    try { current = JSON.parse(storage.getItem(key)); } catch { current = null; }
+    if (!current || current.expiresAt <= Date.now()) {
+      storage.setItem(key, JSON.stringify({ owner, expiresAt: Date.now() + 30000 }));
+      await new Promise(resolve => setTimeout(resolve, 40 + Math.floor(Math.random() * 40)));
+      let claimed;
+      try { claimed = JSON.parse(storage.getItem(key)); } catch { claimed = null; }
+      if (claimed?.owner === owner) {
+        try { return await operation(); }
+        finally {
+          let latest;
+          try { latest = JSON.parse(storage.getItem(key)); } catch { latest = null; }
+          if (latest?.owner === owner) storage.removeItem(key);
+        }
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, 50 + Math.floor(Math.random() * 50)));
+  }
+  throw new Error('Checkout is already active in another tab. Retry in a moment.');
 }

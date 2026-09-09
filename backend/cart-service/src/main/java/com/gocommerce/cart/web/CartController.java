@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -65,18 +66,19 @@ public class CartController {
             cartMetrics.onCartViewed();
         }
 
-        return ResponseEntity.ok(Map.of("data", cart));
+        return ResponseEntity.ok().eTag(Long.toString(cart.getRevision())).body(Map.of("data", cart));
     }
 
     @PostMapping("/{userId}/items")
     public ResponseEntity<?> addItem(
             @PathVariable String userId,
             @AuthenticationPrincipal AuthenticatedUser authUser,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody AddCartItemRequest request) {
 
         String effectiveUserId = validateAndResolveUserId(userId, authUser);
 
-        Cart cart = cartService.addItem(effectiveUserId, request);
+        Cart cart = cartService.addItem(effectiveUserId, request, idempotencyKey);
         for (CartItem item : cart.getItems()) {
             logger.info("Cart Item: Name={}, Quantity={}", item.getName(), item.getQuantity());
         }
@@ -85,17 +87,18 @@ public class CartController {
             cartMetrics.onItemAdded();
         }
 
-        return ResponseEntity.ok(Map.of("data", cart));
+        return ResponseEntity.ok().eTag(Long.toString(cart.getRevision())).body(Map.of("data", cart));
     }
 
     @DeleteMapping("/{userId}")
     public ResponseEntity<Void> clearCart(
             @PathVariable String userId,
-            @AuthenticationPrincipal AuthenticatedUser authUser) {
+            @AuthenticationPrincipal AuthenticatedUser authUser,
+            @RequestHeader(HttpHeaders.IF_MATCH) String ifMatch) {
 
         String effectiveUserId = validateAndResolveUserId(userId, authUser);
 
-        cartService.clearCart(effectiveUserId);
+        cartService.clearCart(effectiveUserId, parseRevision(ifMatch));
         logger.info("Cleared cart for userId={}", effectiveUserId);
 
         if (cartMetrics != null) {
@@ -103,5 +106,24 @@ public class CartController {
         }
 
         return ResponseEntity.noContent().build();
+    }
+
+    static long parseRevision(String ifMatch) {
+        String value = ifMatch == null ? "" : ifMatch.trim();
+        if (value.startsWith("W/")) {
+            value = value.substring(2).trim();
+        }
+        if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+            value = value.substring(1, value.length() - 1);
+        }
+        try {
+            long revision = Long.parseLong(value);
+            if (revision < 0) {
+                throw new NumberFormatException();
+            }
+            return revision;
+        } catch (NumberFormatException error) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "If-Match must contain the cart revision");
+        }
     }
 }

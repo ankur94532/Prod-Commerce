@@ -44,6 +44,7 @@ public class AuthHeaderFilter implements GlobalFilter, Ordered {
     private static final Map<HttpMethod, List<String>> PUBLIC_PREFIXES = Map.of(
             HttpMethod.GET, List.of(
                     "/api/v1/auth/health",
+                    "/api/v1/auth/.well-known/jwks.json",
                     "/api/v1/products",
                     "/api/v1/catalog",
                     "/api/v1/search",

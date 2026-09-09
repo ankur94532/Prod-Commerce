@@ -595,6 +595,32 @@ class SearchServiceTest {
     }
 
     @Test
+    void inferredCategoryBoostNeverBecomesAHardRecallFilter() {
+        ProductSearchRepository repo = mock(ProductSearchRepository.class);
+        SearchCache cache = mock(SearchCache.class);
+        ElasticsearchOperations operations = mock(ElasticsearchOperations.class);
+        SearchService service = new SearchService(repo, cache, null, operations, null,
+                mock(ProductEmbeddingService.class));
+        when(cache.get(any())).thenReturn(Optional.empty());
+        @SuppressWarnings("unchecked")
+        SearchHits<ProductDocument> emptyHits = mock(SearchHits.class);
+        when(emptyHits.getSearchHits()).thenReturn(List.of());
+        when(emptyHits.getTotalHits()).thenReturn(0L);
+        when(operations.search(any(org.springframework.data.elasticsearch.core.query.Query.class),
+                eq(ProductDocument.class))).thenReturn(emptyHits);
+
+        service.search(new SearchRequest("running shoes", null, "text", 0, 20));
+
+        ArgumentCaptor<org.springframework.data.elasticsearch.core.query.Query> captor =
+                ArgumentCaptor.forClass(org.springframework.data.elasticsearch.core.query.Query.class);
+        verify(operations).search(captor.capture(), eq(ProductDocument.class));
+        NativeQuery query = (NativeQuery) captor.getValue();
+        assertThat(query.getQuery().bool().filter()).isEmpty();
+        // Category intent remains a scoring signal inside the text query.
+        assertThat(query.getQuery().toString()).contains("category").contains("footwear");
+    }
+
+    @Test
     void indexProductFromPayload_generatesSearchEmbedding() {
         ProductSearchRepository repo = mock(ProductSearchRepository.class);
         SearchCache cache = mock(SearchCache.class);

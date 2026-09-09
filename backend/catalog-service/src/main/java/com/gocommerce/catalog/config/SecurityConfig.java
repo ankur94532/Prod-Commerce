@@ -1,6 +1,7 @@
 package com.gocommerce.catalog.config;
 
 import com.gocommerce.platform.security.InternalServiceTokenFilter;
+import com.gocommerce.platform.security.AdminAuditFilter;
 import com.gocommerce.platform.security.JwtAuthenticationFilter;
 import com.gocommerce.platform.security.JwtProperties;
 import com.gocommerce.platform.security.JwtVerifier;
@@ -51,6 +52,10 @@ public class SecurityConfig {
                         UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new JwtAuthenticationFilter(jwtVerifier),
                         UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new AdminAuditFilter(request ->
+                                request.getRequestURI().startsWith("/api/v1/admin/products")
+                                        && !"GET".equals(request.getMethod())),
+                        JwtAuthenticationFilter.class)
                 .build();
     }
 }

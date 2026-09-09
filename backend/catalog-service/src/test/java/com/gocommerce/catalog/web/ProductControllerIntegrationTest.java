@@ -1,5 +1,8 @@
 package com.gocommerce.catalog.web;
 
+import com.gocommerce.catalog.repository.ProductRepository;
+import com.gocommerce.catalog.seed.ProductSeedCatalog;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -21,6 +24,15 @@ class ProductControllerIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private ProductRepository products;
+
+    @BeforeEach
+    void createExplicitFixture() {
+        products.deleteAll();
+        products.save(ProductSeedCatalog.products(1).get(0));
+    }
+
     @Test
     void listProducts_returnsOkAndDataArray() throws Exception {
         mockMvc.perform(get("/api/v1/products"))
@@ -30,7 +42,6 @@ class ProductControllerIntegrationTest {
 
     @Test
     void getProductBySlug_returnsExpectedProduct_whenExists() throws Exception {
-        // relies on seed data in CatalogServiceApplication
         mockMvc.perform(get("/api/v1/products/s26-ultra-256gb-gray"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.slug").value("s26-ultra-256gb-gray"))

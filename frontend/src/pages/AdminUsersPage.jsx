@@ -163,10 +163,11 @@ export default function AdminUsersPage() {
           className="grid gap-4 md:grid-cols-2 md:gap-6"
         >
           <div className="md:col-span-2">
-            <label className="block text-xs font-medium text-slate-600 mb-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="aaup-email">
               Email
             </label>
             <input
+              id="aaup-email"
               type="email"
               name="email"
               value={form.email}
@@ -177,10 +178,11 @@ export default function AdminUsersPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="aaup-full-name">
               Full Name
             </label>
             <input
+              id="aaup-full-name"
               type="text"
               name="fullName"
               value={form.fullName}
@@ -191,10 +193,11 @@ export default function AdminUsersPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="aaup-role">
               Role
             </label>
             <select
+              id="aaup-role"
               name="role"
               value={form.role}
               onChange={handleFieldChange}

@@ -5,8 +5,11 @@ import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -111,6 +114,74 @@ class JwtVerifierTest {
     }
 
     @Test
+    void rsaTokensCarryAKeyIdAndRoundTrip() throws Exception {
+        JwtProperties rsa = rsaProperties("key-2026-09", keyPair());
+        String token = new JwtIssuer(rsa).accessToken("user-1", null, null, "USER");
+
+        assertThat(Jwts.parserBuilder().build().parseClaimsJwt(
+                token.substring(0, token.lastIndexOf('.') + 1)).getHeader().get("kid"))
+                .isEqualTo("key-2026-09");
+        assertThat(new JwtVerifier(rsa).verify(token, TokenType.ACCESS).subject()).isEqualTo("user-1");
+    }
+
+    @Test
+    void previousRsaKeyRemainsValidDuringRotationOverlap() throws Exception {
+        KeyPair oldPair = keyPair();
+        KeyPair newPair = keyPair();
+        JwtProperties old = rsaProperties("key-old", oldPair);
+        String tokenIssuedBeforeRotation = new JwtIssuer(old).accessToken("user-1", null, null, "USER");
+
+        JwtProperties rotated = rsaProperties("key-new", newPair);
+        rotated.setPreviousKeyId("key-old");
+        rotated.setPreviousPublicKeyBase64(encode(oldPair.getPublic().getEncoded()));
+
+        assertThat(new JwtVerifier(rotated).verify(tokenIssuedBeforeRotation, TokenType.ACCESS).subject())
+                .isEqualTo("user-1");
+    }
+
+    @Test
+    void unknownRsaKeyIdIsRejectedEvenWhenLegacySecretExists() throws Exception {
+        JwtProperties trusted = rsaProperties("trusted", keyPair());
+        trusted.setSecret(SECRET);
+        JwtProperties attacker = rsaProperties("attacker", keyPair());
+        String token = new JwtIssuer(attacker).accessToken("user-1", null, null, "ADMIN");
+
+        assertThatThrownBy(() -> new JwtVerifier(trusted).verify(token, TokenType.ACCESS))
+                .isInstanceOf(InvalidTokenException.class)
+                .hasMessageContaining("Token rejected");
+    }
+
+    @Test
+    void legacyTokenIsAcceptedOnlyWhenCompatibilitySecretIsExplicit() throws Exception {
+        String legacy = issuer.accessToken("user-1", null, null, "USER");
+        JwtProperties overlap = rsaProperties("key-new", keyPair());
+        overlap.setSecret(SECRET);
+
+        assertThat(new JwtVerifier(overlap).verify(legacy, TokenType.ACCESS).subject()).isEqualTo("user-1");
+        overlap.setSecret(null);
+        assertThatThrownBy(() -> new JwtVerifier(overlap).verify(legacy, TokenType.ACCESS))
+                .isInstanceOf(InvalidTokenException.class);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void jwksPublishesActiveAndPreviousPublicKeysWithoutPrivateMaterial() throws Exception {
+        KeyPair oldPair = keyPair();
+        JwtProperties rotated = rsaProperties("key-new", keyPair());
+        rotated.setPreviousKeyId("key-old");
+        rotated.setPreviousPublicKeyBase64(encode(oldPair.getPublic().getEncoded()));
+
+        Map<String, Object> jwks = JwksDocument.from(rotated);
+        List<Map<String, String>> keys = (List<Map<String, String>>) jwks.get("keys");
+
+        assertThat(keys).extracting(key -> key.get("kid")).containsExactlyInAnyOrder("key-new", "key-old");
+        assertThat(keys).allSatisfy(key -> {
+            assertThat(key).containsEntry("kty", "RSA").containsEntry("alg", "RS256")
+                    .containsKeys("n", "e").doesNotContainKeys("d", "p", "q");
+        });
+    }
+
+    @Test
     void unsignedTokenIsRejected() {
         String unsigned = Jwts.builder()
                 .setSubject("user-1")
@@ -191,5 +262,60 @@ class JwtVerifierTest {
     void signingKeyMatchesAPlainHmacKeyBuiltFromTheSameSecret() {
         assertThat(properties.getSigningKey().getEncoded())
                 .isEqualTo(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)).getEncoded());
+    }
+
+    @Test
+    void anHmacTokenSignedWithThePublicKeyIsRejected() throws Exception {
+        // Algorithm confusion, the attack this design invites: the RSA public key is
+        // published at the JWKS endpoint, so anyone can read it. If HS256 verification
+        // accepted that key's bytes as an HMAC secret, anyone could mint an admin token.
+        KeyPair pair = keyPair();
+        JwtProperties rsa = rsaProperties("key-2026-09", pair);
+        String forged = Jwts.builder()
+                .setHeaderParam("kid", "key-2026-09")
+                .setSubject("attacker")
+                .addClaims(Map.of(TokenType.CLAIM, "access", "role", "ADMIN"))
+                .setExpiration(Date.from(Instant.now().plusSeconds(600)))
+                .signWith(Keys.hmacShaKeyFor(pair.getPublic().getEncoded()), io.jsonwebtoken.SignatureAlgorithm.HS256)
+                .compact();
+
+        assertThatThrownBy(() -> new JwtVerifier(rsa).verify(forged, TokenType.ACCESS))
+                .isInstanceOf(InvalidTokenException.class);
+    }
+
+    @Test
+    void anHmacTokenIsRejectedEvenWhenALegacySecretIsStillConfigured() throws Exception {
+        // The compatibility path must not become a way to bypass the key id entirely.
+        KeyPair pair = keyPair();
+        JwtProperties rsa = rsaProperties("key-2026-09", pair);
+        rsa.setSecret(SECRET);
+        String forged = Jwts.builder()
+                .setHeaderParam("kid", "key-2026-09")
+                .setSubject("attacker")
+                .addClaims(Map.of(TokenType.CLAIM, "access", "role", "ADMIN"))
+                .setExpiration(Date.from(Instant.now().plusSeconds(600)))
+                .signWith(Keys.hmacShaKeyFor(pair.getPublic().getEncoded()), io.jsonwebtoken.SignatureAlgorithm.HS256)
+                .compact();
+
+        assertThatThrownBy(() -> new JwtVerifier(rsa).verify(forged, TokenType.ACCESS))
+                .isInstanceOf(InvalidTokenException.class);
+    }
+
+    private static KeyPair keyPair() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        return generator.generateKeyPair();
+    }
+
+    private static JwtProperties rsaProperties(String keyId, KeyPair pair) {
+        JwtProperties properties = new JwtProperties();
+        properties.setActiveKeyId(keyId);
+        properties.setPrivateKeyBase64(encode(pair.getPrivate().getEncoded()));
+        properties.setPublicKeyBase64(encode(pair.getPublic().getEncoded()));
+        return properties;
+    }
+
+    private static String encode(byte[] value) {
+        return Base64.getEncoder().encodeToString(value);
     }
 }

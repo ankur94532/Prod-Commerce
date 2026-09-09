@@ -46,7 +46,7 @@ spec:
             - configMapRef:
                 name: gocommerce-config
             - secretRef:
-                name: gocommerce-secrets
+                name: gocommerce-jwt-verifier
           env:
             - name: MANAGEMENT_SERVER_PORT
               value: "9090"

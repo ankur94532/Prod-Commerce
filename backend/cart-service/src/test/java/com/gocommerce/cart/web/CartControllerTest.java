@@ -43,13 +43,13 @@ class CartControllerTest {
         }
 
         @Override
-        public Cart addItem(String userId, AddCartItemRequest request) {
+        public Cart addItem(String userId, AddCartItemRequest request, String idempotencyKey) {
             this.lastUserIdAdd = userId;
             return cartToReturn;
         }
 
         @Override
-        public void clearCart(String userId) {
+        public void clearCart(String userId, long expectedRevision) {
             this.lastUserIdClear = userId;
         }
     }
@@ -108,7 +108,7 @@ class CartControllerTest {
         req.setCurrency("USD");
         req.setQuantity(1);
 
-        ResponseEntity<?> response = controller.addItem("user-1", auth, req);
+        ResponseEntity<?> response = controller.addItem("user-1", auth, "add-1", req);
 
         assertThat(service.lastUserIdAdd).isEqualTo("user-1");
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -120,9 +120,34 @@ class CartControllerTest {
         CartController controller = new CartController(service, null);
         AuthenticatedUser auth = new AuthenticatedUser("user-1", "user@example.com", "User One", "USER");
 
-        ResponseEntity<Void> response = controller.clearCart("user-1", auth);
+        ResponseEntity<Void> response = controller.clearCart("user-1", auth, "\"0\"");
 
         assertThat(service.lastUserIdClear).isEqualTo("user-1");
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+    }
+
+    @Test
+    void invalidIfMatchIsRejectedBeforeClearing() {
+        RecordingCartService service = new RecordingCartService();
+        CartController controller = new CartController(service, null);
+        AuthenticatedUser auth = new AuthenticatedUser("user-1", "user@example.com", "User One", "USER");
+
+        ResponseStatusException error = assertThrows(ResponseStatusException.class,
+                () -> controller.clearCart("user-1", auth, "not-a-revision"));
+
+        assertThat(error.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(service.lastUserIdClear).isNull();
+    }
+
+    @Test
+    void responseCarriesRevisionAsAnEtag() {
+        RecordingCartService service = new RecordingCartService();
+        service.cartToReturn.setRevision(7);
+        CartController controller = new CartController(service, null);
+        AuthenticatedUser auth = new AuthenticatedUser("user-1", "user@example.com", "User One", "USER");
+
+        ResponseEntity<?> response = controller.getCart("user-1", auth);
+
+        assertThat(response.getHeaders().getETag()).isEqualTo("\"7\"");
     }
 }

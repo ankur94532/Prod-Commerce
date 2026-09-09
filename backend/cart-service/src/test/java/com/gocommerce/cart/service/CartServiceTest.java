@@ -73,13 +73,14 @@ class CartServiceTest {
 
         AddCartItemRequest req = buildRequest("p1", 2);
 
-        Cart result = cartService.addItem("user-1", req);
+        Cart result = cartService.addItem("user-1", req, "add-1");
 
         assertThat(result.getUserId()).isEqualTo("user-1");
         assertThat(result.getItems()).hasSize(1);
         CartItem item = result.getItems().get(0);
         assertThat(item.getProductId()).isEqualTo("p1");
         assertThat(item.getQuantity()).isEqualTo(2);
+        assertThat(result.getRevision()).isEqualTo(1);
 
         verify(cartRepository).save(any(Cart.class));
     }
@@ -96,19 +97,73 @@ class CartServiceTest {
 
         AddCartItemRequest req = buildRequest("p1", 2);
 
-        Cart result = cartService.addItem("user-1", req);
+        Cart result = cartService.addItem("user-1", req, "add-2");
 
         assertThat(result.getItems()).hasSize(1);
         CartItem item = result.getItems().get(0);
         assertThat(item.getQuantity()).isEqualTo(5);
+        assertThat(result.getRevision()).isEqualTo(1);
 
         verify(cartRepository).save(existingCart);
     }
 
     @Test
-    void clearCart_deletesById() {
-        cartService.clearCart("user-1");
+    void clearCart_deletesOnlyAtExpectedRevision() {
+        Cart existing = new Cart("user-1");
+        existing.setRevision(3);
+        when(cartRepository.findById("user-1")).thenReturn(Optional.of(existing));
+
+        cartService.clearCart("user-1", 3);
 
         verify(cartRepository).deleteById("user-1");
+    }
+
+    @Test
+    void staleClearCannotDeleteAConcurrentlyChangedCart() {
+        Cart changed = new Cart("user-1");
+        changed.setRevision(4);
+        when(cartRepository.findById("user-1")).thenReturn(Optional.of(changed));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> cartService.clearCart("user-1", 3))
+                .isInstanceOf(CartConflictException.class)
+                .hasMessageContaining("expected revision 3").hasMessageContaining("found 4");
+        verify(cartRepository, never()).deleteById(anyString());
+    }
+
+    @Test
+    void repeatedAddWithSameKeyDoesNotIncrementTwice() {
+        Cart existing = new Cart("user-1");
+        when(cartRepository.findById("user-1")).thenReturn(Optional.of(existing));
+        when(cartRepository.save(existing)).thenReturn(existing);
+        AddCartItemRequest request = buildRequest("p1", 2);
+
+        Cart first = cartService.addItem("user-1", request, "stable-key");
+        Cart replay = cartService.addItem("user-1", request, "stable-key");
+
+        assertThat(first.getRevision()).isEqualTo(1);
+        assertThat(replay.getItems().get(0).getQuantity()).isEqualTo(2);
+        verify(cartRepository, times(1)).save(existing);
+    }
+
+    @Test
+    void reusedKeyWithDifferentPayloadFailsClosed() {
+        Cart existing = new Cart("user-1");
+        when(cartRepository.findById("user-1")).thenReturn(Optional.of(existing));
+        when(cartRepository.save(existing)).thenReturn(existing);
+        cartService.addItem("user-1", buildRequest("p1", 1), "stable-key");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> cartService.addItem("user-1", buildRequest("p1", 2), "stable-key"))
+                .isInstanceOf(CartConflictException.class)
+                .hasMessageContaining("another cart mutation");
+    }
+
+    @Test
+    void clearingAnAlreadyEmptyRevisionZeroCartIsIdempotent() {
+        when(cartRepository.findById("user-1")).thenReturn(Optional.empty());
+
+        cartService.clearCart("user-1", 0);
+
+        verify(cartRepository, never()).deleteById(anyString());
     }
 }

@@ -17,9 +17,12 @@ export async function getCart(userId) {
     : payload;
 }
 
-export async function clearCart(userId) {
+export async function clearCart(userId, revision) {
+  if (!Number.isSafeInteger(revision) || revision < 0) {
+    throw new Error("Cannot clear a cart without its revision.");
+  }
   const res = await cartApi.delete(`/cart/${userId}`, {
-    headers: getAuthHeaders(),
+    headers: { ...getAuthHeaders(), "If-Match": `"${revision}"` },
   });
 
   if (res.status !== 200 && res.status !== 204) {
@@ -43,7 +46,11 @@ export async function addCartItem(
   };
 
   const res = await cartApi.post(`/cart/${userId}/items`, body, {
-    headers: getAuthHeaders(),
+    headers: {
+      ...getAuthHeaders(),
+      "Idempotency-Key": globalThis.crypto?.randomUUID?.()
+        || `cart-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    },
   });
 
   const payload = res.data;

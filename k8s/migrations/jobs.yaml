@@ -47,8 +47,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: gocommerce-config
-            - secretRef:
-                name: gocommerce-secrets
           env:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
@@ -57,7 +55,7 @@ spec:
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: gocommerce-secrets
+                  name: gocommerce-auth-db
                   key: AUTH_DB_PASSWORD
             - name: SPRING_DATASOURCE_URL
               valueFrom:
@@ -118,8 +116,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: gocommerce-config
-            - secretRef:
-                name: gocommerce-secrets
           env:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
@@ -128,7 +124,7 @@ spec:
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: gocommerce-secrets
+                  name: gocommerce-catalog-db
                   key: CATALOG_DB_PASSWORD
             - name: SPRING_DATASOURCE_URL
               valueFrom:
@@ -189,8 +185,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: gocommerce-config
-            - secretRef:
-                name: gocommerce-secrets
           env:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
@@ -199,7 +193,7 @@ spec:
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: gocommerce-secrets
+                  name: gocommerce-order-db
                   key: ORDER_DB_PASSWORD
             - name: SPRING_DATASOURCE_URL
               valueFrom:
@@ -260,8 +254,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: gocommerce-config
-            - secretRef:
-                name: gocommerce-secrets
           env:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
@@ -270,7 +262,7 @@ spec:
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: gocommerce-secrets
+                  name: gocommerce-analytics-db
                   key: ANALYTICS_DB_PASSWORD
             - name: SPRING_DATASOURCE_URL
               valueFrom:
@@ -331,8 +323,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: gocommerce-config
-            - secretRef:
-                name: gocommerce-secrets
           env:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
@@ -341,7 +331,7 @@ spec:
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: gocommerce-secrets
+                  name: gocommerce-recommendation-db
                   key: RECOMMENDATION_DB_PASSWORD
             - name: SPRING_DATASOURCE_URL
               valueFrom:

@@ -427,7 +427,11 @@ Important environment variables:
 | Variable | Purpose |
 |---|---|
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` | Local database credentials |
-| `SECURITY_JWT_SECRET` | JWT signing secret |
+| `SECURITY_JWT_ACTIVE_KEY_ID` | Active RS256 signing key ID (`kid`) |
+| `SECURITY_JWT_PRIVATE_KEY_BASE64` | Auth-service PKCS#8 RSA private key (DER base64) |
+| `SECURITY_JWT_PUBLIC_KEY_BASE64` | Active X.509 RSA public key (DER base64) |
+| `SECURITY_JWT_PREVIOUS_KEY_ID` / `SECURITY_JWT_PREVIOUS_PUBLIC_KEY_BASE64` | Optional verifier overlap key during rotation |
+| `SECURITY_JWT_SECRET` | Local/test HMAC compatibility only; omit after RS256 rollout |
 | `INTERNAL_SERVICE_TOKEN` | Protects internal catalog APIs |
 | `CATALOG_SEED_SIZE` | Number of seeded catalog products |
 | `SEARCH_INDEXING_BATCH_SIZE` | Batch size for search indexing |

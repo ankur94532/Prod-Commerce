@@ -41,6 +41,22 @@ patches:
   - target:
       kind: Deployment
     patch: |-
+      - op: add
+        path: /spec/progressDeadlineSeconds
+        value: 600
+      - op: add
+        path: /spec/minReadySeconds
+        value: 10
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxUnavailable: 0
+            maxSurge: 1
+  - target:
+      kind: Deployment
+    patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: IfNotPresent

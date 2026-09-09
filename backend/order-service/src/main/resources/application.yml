@@ -99,7 +99,11 @@ springdoc:
 
 security:
   jwt:
-    secret: ${SECURITY_JWT_SECRET}
+    secret: ${SECURITY_JWT_SECRET:}
+    active-key-id: ${SECURITY_JWT_ACTIVE_KEY_ID:}
+    public-key-base64: ${SECURITY_JWT_PUBLIC_KEY_BASE64:}
+    previous-key-id: ${SECURITY_JWT_PREVIOUS_KEY_ID:}
+    previous-public-key-base64: ${SECURITY_JWT_PREVIOUS_PUBLIC_KEY_BASE64:}
 
 services:
   catalog:

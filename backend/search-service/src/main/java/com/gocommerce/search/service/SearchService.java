@@ -466,7 +466,6 @@ public class SearchService {
     private List<Query> buildFilters(SearchRequest request) {
         List<Query> filters = new ArrayList<>();
         addTermFilter(filters, "category", request.category());
-        addInferredCategoryFilter(filters, request);
         addTermFilter(filters, "brand", request.brand());
         addTermFilter(filters, "color", request.color());
         addTermFilter(filters, "type", request.type());
@@ -487,17 +486,6 @@ public class SearchService {
                 .field(field)
                 .value(value)
                 .caseInsensitive(true))));
-    }
-
-    private void addInferredCategoryFilter(List<Query> filters, SearchRequest request) {
-        if (request.category() != null && !request.category().isBlank()) {
-            return;
-        }
-
-        String categoryIntent = detectCategoryIntent(request.query());
-        if (categoryIntent != null) {
-            addTermFilter(filters, "category", categoryIntent);
-        }
     }
 
     private void addPriceFilter(List<Query> filters, BigDecimal minPrice, BigDecimal maxPrice) {

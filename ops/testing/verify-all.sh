@@ -34,13 +34,17 @@ run() {
   rm -f "$log"
 }
 
-backend_tests() { mvn -f backend/pom.xml test -q; }
-frontend_tests() { (cd frontend && node --test "src/**/*.test.js"); }
+backend_tests() { mvn -f backend/pom.xml verify -q; }
+frontend_tests() { (cd frontend && npm test); }
 frontend_lint() { (cd frontend && npm run lint); }
 frontend_build() { (cd frontend && npm run build); }
+frontend_audit() { (cd frontend && npm audit --omit=dev --audit-level=high); }
 kubernetes_manifests() {
   kubectl apply --dry-run=client -k k8s &&
     kubectl apply --dry-run=client -k k8s/migrations &&
+    kubectl apply --dry-run=client -k k8s/seeds &&
+    kubectl apply --dry-run=client -k deploy/overlays/staging &&
+    kubectl apply --dry-run=client -k deploy/overlays/staging-migrations &&
     kubectl apply --dry-run=client -k deploy/overlays/production &&
     kubectl apply --dry-run=client -k deploy/overlays/production-migrations
 }
@@ -60,6 +64,7 @@ run "Database role isolation"           ops/testing/database-isolation.sh
 run "Database role migration"           ops/testing/database-role-migration.sh
 run "Schema migration job"              ops/testing/migration-job.sh
 run "Consumer-driven HTTP contracts"    ops/testing/contracts.sh
+run "Ordered deployment procedure"      ops/testing/deploy-procedure.sh
 run "Search retrieval (Elasticsearch)"  ops/testing/search-retrieval.sh
 run "Graded evaluation harness"         ops/testing/search-evaluation.sh
 run "Load-test harness"                 ops/testing/load-harness.sh
@@ -67,6 +72,7 @@ run "Point-in-time recovery drill"      ops/backup/pitr-drill.sh
 run "Frontend tests"                    frontend_tests
 run "Frontend lint"                     frontend_lint
 run "Frontend build"                    frontend_build
+run "Frontend production dependency audit" frontend_audit
 run "Kubernetes manifests"              kubernetes_manifests
 run "Compose configuration"             compose_config
 run "Prometheus config and alert rules" prometheus_rules

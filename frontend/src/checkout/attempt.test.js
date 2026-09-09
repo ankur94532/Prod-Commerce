@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cartFingerprint, submitCheckout, startNewAttempt, inspectAttempt, cleanupPaidCart } from './attempt.js';
+import { cartFingerprint, submitCheckout, startNewAttempt, inspectAttempt, cleanupPaidCart, withCheckoutLock } from './attempt.js';
 
 function fixture() {
   const records = new Map();
   const calls = [];
   let sequence = 0;
   const args = {
-    userId: 'u', items: [{ productId: '1', quantity: 2 }],
+    userId: 'u', items: [{ productId: '1', quantity: 2 }], cartRevision: 3,
     payment: { cardNumber: 'secret-card', cardCvc: 'secret-cvc' },
     storage: { getItem: k => records.get(k) || null, setItem: (k, v) => records.set(k, v), removeItem: k => records.delete(k) },
     uuid: () => `key-${++sequence}`,
@@ -116,4 +116,36 @@ test('cleanup cannot clear a changed cart or act on an attempt replaced in anoth
   startNewAttempt(args.userId, args.storage, previousOrder);
   await assert.rejects(cleanupPaidCart(cleanup));
   assert.equal(cleared, 1);
+});
+
+test('cart cleanup uses the revision captured before payment', async () => {
+  const { args } = fixture();
+  let clearArguments;
+  args.clearCart = async (...values) => { clearArguments = values; };
+
+  await submitCheckout(args);
+
+  assert.deepEqual(clearArguments, ['u', 3]);
+});
+
+test('checkout lock falls back when Web Locks are unavailable and releases its lease', async () => {
+  const records = new Map();
+  const storage = {
+    getItem: key => records.get(key) || null,
+    setItem: (key, value) => records.set(key, value),
+    removeItem: key => records.delete(key),
+  };
+
+  const result = await withCheckoutLock('u', storage, async () => 'done', {});
+
+  assert.equal(result, 'done');
+  assert.equal(records.has('checkout-lock:u'), false);
+});
+
+test('checkout lock prefers native Web Locks when present', async () => {
+  let requested;
+  const browser = { locks: { request: async (key, operation) => { requested = key; return operation(); } } };
+
+  assert.equal(await withCheckoutLock('u', {}, async () => 'native', browser), 'native');
+  assert.equal(requested, 'checkout:u');
 });

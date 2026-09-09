@@ -61,7 +61,8 @@ class AuthHeaderFilterTest {
     @Test
     void publicReadsPassWithoutCredentials() {
         for (String path : new String[] { "/api/v1/products", "/api/v1/products/slug", "/api/v1/search",
-                "/api/v1/search/vector", "/api/v1/recommendations/trending", "/api/v1/auth/health" }) {
+                "/api/v1/search/vector", "/api/v1/recommendations/trending", "/api/v1/auth/health",
+                "/api/v1/auth/.well-known/jwks.json" }) {
             chain = new StubGatewayFilterChain();
             MockServerWebExchange exchange = run(MockServerHttpRequest.get(path).build());
 

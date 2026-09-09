@@ -1,6 +1,7 @@
 package com.gocommerce.analytics.security;
 
 import com.gocommerce.platform.security.JwtAuthenticationFilter;
+import com.gocommerce.platform.security.AdminAuditFilter;
 import com.gocommerce.platform.security.JwtProperties;
 import com.gocommerce.platform.security.JwtVerifier;
 import org.springframework.boot.actuate.autoconfigure.security.servlet.EndpointRequest;
@@ -55,6 +56,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/analytics/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(new JwtAuthenticationFilter(jwtVerifier), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new AdminAuditFilter(request ->
+                                request.getRequestURI().startsWith("/api/v1/analytics/")
+                                        && !request.getRequestURI().endsWith("/health")),
+                        JwtAuthenticationFilter.class)
                 .build();
     }
 }

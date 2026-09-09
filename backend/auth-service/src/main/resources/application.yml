@@ -28,7 +28,14 @@ spring:
 
 security:
   jwt:
-    secret: ${SECURITY_JWT_SECRET}
+    # RS256 is required in deployed environments. The empty legacy secret exists only
+    # for a short migration overlap with old no-kid HMAC tokens.
+    secret: ${SECURITY_JWT_SECRET:}
+    active-key-id: ${SECURITY_JWT_ACTIVE_KEY_ID:}
+    private-key-base64: ${SECURITY_JWT_PRIVATE_KEY_BASE64:}
+    public-key-base64: ${SECURITY_JWT_PUBLIC_KEY_BASE64:}
+    previous-key-id: ${SECURITY_JWT_PREVIOUS_KEY_ID:}
+    previous-public-key-base64: ${SECURITY_JWT_PREVIOUS_PUBLIC_KEY_BASE64:}
     # Short access tokens with a refresh endpoint, rather than one long-lived token.
     access-token-ttl: ${SECURITY_JWT_ACCESS_TOKEN_TTL:15m}
     refresh-token-ttl: ${SECURITY_JWT_REFRESH_TOKEN_TTL:7d}

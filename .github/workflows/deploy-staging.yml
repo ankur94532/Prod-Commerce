@@ -1,0 +1,49 @@
+name: Deploy Staging
+
+on:
+  workflow_run:
+    workflows: ["Docker Images"]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' && vars.STAGING_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: azure/setup-kubectl@v4
+      - name: Configure staging cluster
+        env:
+          KUBECONFIG_B64: ${{ secrets.STAGING_KUBECONFIG_B64 }}
+        run: |
+          test -n "$KUBECONFIG_B64"
+          printf '%s' "$KUBECONFIG_B64" | base64 --decode > "$RUNNER_TEMP/kubeconfig"
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+      - name: Deploy the verified immutable images in dependency order
+        env:
+          IMAGE_PREFIX_RAW: ghcr.io/${{ github.repository }}
+          IMAGE_TAG: sha-${{ github.event.workflow_run.head_sha }}
+          PGHOST: ${{ secrets.STAGING_PGHOST }}
+          PGPORT: ${{ secrets.STAGING_PGPORT }}
+          PGUSER: ${{ secrets.STAGING_PGUSER }}
+          PGPASSWORD: ${{ secrets.STAGING_PGPASSWORD }}
+          AUTH_DB_PASSWORD: ${{ secrets.AUTH_DB_PASSWORD }}
+          CATALOG_DB_PASSWORD: ${{ secrets.CATALOG_DB_PASSWORD }}
+          ORDER_DB_PASSWORD: ${{ secrets.ORDER_DB_PASSWORD }}
+          ANALYTICS_DB_PASSWORD: ${{ secrets.ANALYTICS_DB_PASSWORD }}
+          RECOMMENDATION_DB_PASSWORD: ${{ secrets.RECOMMENDATION_DB_PASSWORD }}
+        run: |
+          export IMAGE_PREFIX="${IMAGE_PREFIX_RAW,,}"
+          ops/deploy/release.sh staging

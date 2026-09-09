@@ -49,10 +49,11 @@ function Login() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
+          <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="ll-email">
             Email
           </label>
           <input
+            id="ll-email"
             type="email"
             name="email"
             value={form.email}
@@ -62,10 +63,11 @@ function Login() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
+          <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="ll-password">
             Password
           </label>
           <input
+            id="ll-password"
             type="password"
             name="password"
             value={form.password}

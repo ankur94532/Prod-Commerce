@@ -40,17 +40,37 @@ spring:
                 redis-rate-limiter.requestedTokens: 1
                 key-resolver: "#{@ipKeyResolver}"
 
+        # Administrative catalog mutations get a tighter budget than public reads.
+        - id: catalog-admin
+          uri: ${CATALOG_SERVICE_URI:http://localhost:8082}
+          predicates:
+            - Path=/api/v1/admin/products/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 2
+                redis-rate-limiter.burstCapacity: 4
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
+
         # Catalog / products
         - id: catalog-service
           uri: ${CATALOG_SERVICE_URI:http://localhost:8082}
           predicates:
-            - Path=/api/v1/products/**,/api/v1/admin/products/**
+            - Path=/api/v1/products/**
 
         # Cart
         - id: cart-service
           uri: ${CART_SERVICE_URI:http://localhost:8083}
           predicates:
             - Path=/api/v1/cart/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 40
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
 
         # Search reindex is a long-running admin/dev operation; do not wrap it in the
         # read-search circuit breaker fallback, otherwise slow reindexes can become 405s.
@@ -59,6 +79,13 @@ spring:
           predicates:
             - Path=/api/v1/search/reindex
             - Method=POST
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 1
+                redis-rate-limiter.burstCapacity: 1
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
 
         # Search (with circuit breaker + fallback)
         - id: search-service
@@ -66,6 +93,12 @@ spring:
           predicates:
             - Path=/api/v1/search/**
           filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 50
+                redis-rate-limiter.burstCapacity: 100
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
             - name: CircuitBreaker
               args:
                 name: searchRoute
@@ -84,11 +117,25 @@ spring:
           uri: ${ORDER_SERVICE_URI:http://localhost:8085}
           predicates:
             - Path=/api/v1/orders/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 10
+                redis-rate-limiter.burstCapacity: 20
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
 
         - id: analytics-service
           uri: ${ANALYTICS_SERVICE_URI:http://localhost:8086}
           predicates:
             - Path=/api/v1/analytics/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
 
         - id: recommendation-service
           uri: ${RECOMMENDATION_SERVICE_URI:http://localhost:8087}
@@ -97,7 +144,11 @@ spring:
 
 security:
   jwt:
-    secret: ${SECURITY_JWT_SECRET}
+    secret: ${SECURITY_JWT_SECRET:}
+    active-key-id: ${SECURITY_JWT_ACTIVE_KEY_ID:}
+    public-key-base64: ${SECURITY_JWT_PUBLIC_KEY_BASE64:}
+    previous-key-id: ${SECURITY_JWT_PREVIOUS_KEY_ID:}
+    previous-public-key-base64: ${SECURITY_JWT_PREVIOUS_PUBLIC_KEY_BASE64:}
 
 management:
   # Actuator moves to its own port in deployed environments so the public ingress, which

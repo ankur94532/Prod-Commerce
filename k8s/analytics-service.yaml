@@ -46,7 +46,7 @@ spec:
             - configMapRef:
                 name: gocommerce-config
             - secretRef:
-                name: gocommerce-secrets
+                name: gocommerce-jwt-verifier
           env:
             # A least-privilege role scoped to this service's database only.
             - name: SPRING_DATASOURCE_USERNAME
@@ -54,7 +54,7 @@ spec:
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: gocommerce-secrets
+                  name: gocommerce-analytics-db
                   key: ANALYTICS_DB_PASSWORD
             - name: MANAGEMENT_SERVER_PORT
               value: "9090"

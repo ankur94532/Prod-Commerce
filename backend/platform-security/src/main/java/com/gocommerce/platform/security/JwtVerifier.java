@@ -1,8 +1,12 @@
 package com.gocommerce.platform.security;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwsHeader;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SigningKeyResolverAdapter;
+
+import java.security.Key;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -19,6 +23,7 @@ public class JwtVerifier {
 
     public JwtVerifier(JwtProperties properties) {
         this.properties = properties;
+        properties.validateForVerifier();
     }
 
     public VerifiedToken verify(String token, TokenType expected) {
@@ -28,7 +33,12 @@ public class JwtVerifier {
         Claims claims;
         try {
             claims = Jwts.parserBuilder()
-                    .setSigningKey(properties.getSigningKey())
+                    .setSigningKeyResolver(new SigningKeyResolverAdapter() {
+                        @Override
+                        public Key resolveSigningKey(JwsHeader header, Claims untrustedClaims) {
+                            return properties.getVerificationKey(header.getKeyId());
+                        }
+                    })
                     .build()
                     .parseClaimsJws(token)
                     .getBody();

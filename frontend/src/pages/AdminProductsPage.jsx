@@ -198,10 +198,11 @@ export default function AdminProductsPage() {
           className="grid gap-4 md:grid-cols-2 md:gap-6"
         >
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="aapp-slug">
               Slug *
             </label>
             <input
+              id="aapp-slug"
               type="text"
               name="slug"
               value={form.slug}
@@ -213,10 +214,11 @@ export default function AdminProductsPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="aapp-name">
               Name *
             </label>
             <input
+              id="aapp-name"
               type="text"
               name="name"
               value={form.name}
@@ -228,10 +230,11 @@ export default function AdminProductsPage() {
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-xs font-medium text-slate-600 mb-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="aapp-description">
               Description
             </label>
             <textarea
+              id="aapp-description"
               name="description"
               value={form.description}
               onChange={handleFieldChange}
@@ -242,10 +245,11 @@ export default function AdminProductsPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="aapp-price-inr">
               Price (INR)
             </label>
             <input
+              id="aapp-price-inr"
               type="number"
               name="price"
               value={form.price}
@@ -257,10 +261,11 @@ export default function AdminProductsPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="aapp-stock-quantity">
               Stock Quantity
             </label>
             <input
+              id="aapp-stock-quantity"
               type="number"
               name="stockQuantity"
               value={form.stockQuantity}
@@ -271,10 +276,11 @@ export default function AdminProductsPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="aapp-category-slug">
               Category Slug
             </label>
             <input
+              id="aapp-category-slug"
               type="text"
               name="categorySlug"
               value={form.categorySlug}
@@ -285,10 +291,11 @@ export default function AdminProductsPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="aapp-brand">
               Brand
             </label>
             <input
+              id="aapp-brand"
               type="text"
               name="brand"
               value={form.brand}
@@ -299,10 +306,11 @@ export default function AdminProductsPage() {
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-xs font-medium text-slate-600 mb-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1" htmlFor="aapp-image-urls-comma-separated">
               Image URLs (comma-separated)
             </label>
             <input
+              id="aapp-image-urls-comma-separated"
               type="text"
               name="imageUrlsCsv"
               value={form.imageUrlsCsv}
