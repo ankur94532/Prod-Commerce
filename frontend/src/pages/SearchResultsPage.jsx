@@ -48,8 +48,10 @@ export default function SearchResultsPage() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [meta, setMeta] = useState({ page: 0, size, totalPages: 0 });
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // The results currently held belong to this query key; anything else means a fetch is
+  // still in flight for the query on screen.
+  const [loadedKey, setLoadedKey] = useState(null);
   const [filterOptions, setFilterOptions] = useState({
     categories: [],
     brands: [],
@@ -74,6 +76,10 @@ export default function SearchResultsPage() {
     []
   );
 
+  // Derived rather than stored: a query with no results yet is loading, and an empty
+  // search box is not.
+  const loading = Boolean(q) && loadedKey !== paramsKey;
+
   const hasSelectedFilters = useMemo(
     () =>
       Object.entries(filters).some(([key, value]) => {
@@ -83,19 +89,13 @@ export default function SearchResultsPage() {
     [filters]
   );
 
+  // "loading" is derived from whether the results on hand belong to the query being
+  // shown, rather than set at the top of the effect. That also removes the moment where
+  // the previous query's results were displayed as though they were current.
   useEffect(() => {
-    if (!q) {
-      setItems([]);
-      setTotal(0);
-      setMeta({ page: 0, size, totalPages: 0 });
-      setError(null);
-      setLoading(false);
-      return;
-    }
+    if (!q) return;
 
-    setLoading(true);
-    setError(null);
-
+    let active = true;
     searchProducts({
       q,
       page,
@@ -114,6 +114,7 @@ export default function SearchResultsPage() {
       sort: filters.sort,
     })
       .then((data) => {
+        if (!active) return;
         setItems(data?.items || []);
         setTotal(data?.total || 0);
         setMeta({
@@ -121,12 +122,21 @@ export default function SearchResultsPage() {
           size: data?.size || size,
           totalPages: data?.totalPages || 0,
         });
+        setError(null);
+        setLoadedKey(paramsKey);
       })
       .catch((err) => {
+        if (!active) return;
         console.error("Search failed", err);
+        setItems([]);
+        setTotal(0);
         setError("Failed to load search results. Please try again.");
-      })
-      .finally(() => setLoading(false));
+        setLoadedKey(paramsKey);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [paramsKey]);
 
   useEffect(() => {
@@ -203,7 +213,7 @@ export default function SearchResultsPage() {
             Search results for{" "}
             <span className="text-blue-600 break-words">“{q}”</span>
           </h1>
-          {!loading && !error && (
+          {!loading && !error && q && (
             <p className="text-sm text-slate-500 mt-1">
               {total} result{total !== 1 ? "s" : ""} found
             </p>
@@ -339,14 +349,14 @@ export default function SearchResultsPage() {
         <div className="text-sm text-red-600">{error}</div>
       )}
 
-      {!loading && !error && total === 0 && (
+      {!loading && !error && q && total === 0 && (
         <p className="text-slate-600 text-sm">
           No products found for “{q}”
           {hasSelectedFilters ? " with the selected filters." : "."}
         </p>
       )}
 
-      {!loading && !error && total > 0 && (
+      {!loading && !error && q && total > 0 && (
         <>
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((item) => (

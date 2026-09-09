@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext.jsx";
+import { useAuth } from "../../context/authContextValue.js";
 
 function Navbar() {
   const { user, logout } = useAuth();
@@ -13,11 +13,17 @@ function Navbar() {
   const linkBase =
     "text-sm px-2 py-1 rounded hover:text-blue-600 hover:bg-slate-100";
 
-  useEffect(() => {
-    if (location.pathname !== "/search") return;
-    const params = new URLSearchParams(location.search);
-    setSearchTerm(params.get("q") || "");
-  }, [location.pathname, location.search]);
+  // The box mirrors the URL on the search page but stays editable, so the query is
+  // adjusted during render when it changes rather than one render later in an effect.
+  const urlQuery =
+    location.pathname === "/search"
+      ? new URLSearchParams(location.search).get("q") || ""
+      : null;
+  const [lastUrlQuery, setLastUrlQuery] = useState(urlQuery);
+  if (urlQuery !== null && urlQuery !== lastUrlQuery) {
+    setLastUrlQuery(urlQuery);
+    setSearchTerm(urlQuery);
+  }
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();

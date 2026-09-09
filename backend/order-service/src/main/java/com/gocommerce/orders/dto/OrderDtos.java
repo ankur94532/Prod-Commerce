@@ -1,5 +1,7 @@
 package com.gocommerce.orders.dto;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -23,7 +25,7 @@ public class OrderDtos {
 
     public record CreateOrderRequest(
             String userId,
-            @NotNull List<CreateOrderItemRequest> items,
+            @NotEmpty List<@NotNull @Valid CreateOrderItemRequest> items,
             PaymentDetails payment
     ) {}
 
@@ -31,7 +33,9 @@ public class OrderDtos {
             String cardNumber,
             String cardExpiry,
             String cardCvc
-    ) {}
+    ) {
+        @Override public String toString() { return "PaymentDetails[REDACTED]"; }
+    }
 
     public record OrderItemResponse(
             Long id,

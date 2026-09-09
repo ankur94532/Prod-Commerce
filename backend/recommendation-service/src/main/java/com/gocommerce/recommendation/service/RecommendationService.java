@@ -44,33 +44,6 @@ public class RecommendationService {
         this(productStatsRepository, null);
     }
 
-    @Transactional
-    public void recordOrder(OrderCreatedEvent event) {
-        if (event == null || event.items() == null) {
-            return;
-        }
-
-        for (OrderCreatedEvent.Line line : event.items()) {
-            String productId = line.productId();
-            String productName = line.productName();
-            long qty = line.quantity();
-            BigDecimal lineTotal = line.unitPrice() != null
-                    ? line.unitPrice().multiply(BigDecimal.valueOf(qty))
-                    : BigDecimal.ZERO;
-
-            ProductStats stats = productStatsRepository.findByProductId(productId)
-                    .orElseGet(() -> new ProductStats(productId, productName, 0, BigDecimal.ZERO));
-
-            stats.addPurchase(qty, lineTotal, productName);
-
-            productStatsRepository.save(stats);
-        }
-
-        if (recommendationMetrics != null) {
-            recommendationMetrics.onOrderEventProcessed();
-        }
-    }
-
     @Transactional(readOnly = true)
     public PopularityResponse getPopularity(int limit) {
         if (limit <= 0) limit = 10;

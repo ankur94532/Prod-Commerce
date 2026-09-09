@@ -25,19 +25,6 @@ public class AnalyticsService {
         this(summaryRepository, null);
     }
 
-    @Transactional
-    public void recordOrder(BigDecimal totalAmount) {
-        AnalyticsSummary summary = summaryRepository.findById(1L)
-                .orElseGet(AnalyticsSummary::initial);
-
-        summary.incrementOrder(totalAmount);
-        summaryRepository.save(summary);
-
-        if (analyticsMetrics != null) {
-            analyticsMetrics.onOrderRecorded(totalAmount);
-        }
-    }
-
     @Transactional(readOnly = true)
     public AnalyticsSummary getSummary() {
         AnalyticsSummary summary = summaryRepository.findById(1L)

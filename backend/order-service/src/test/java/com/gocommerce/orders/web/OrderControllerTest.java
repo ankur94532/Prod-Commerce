@@ -144,4 +144,27 @@ class OrderControllerTest {
                         .param("userId", "someone-else"))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    @WithMockUser(username = "user-123")
+    void invalidNestedItemsNeverReachCheckout() throws Exception {
+        for (String items : List.of("[]", "[null]", "[{\"productId\":\"1\",\"quantity\":0}]", "[{\"productId\":\"\",\"quantity\":1}]")) {
+            mockMvc.perform(post("/api/v1/orders").contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"items\":" + items + "}")).andExpect(status().isBadRequest());
+        }
+        org.mockito.Mockito.verifyNoInteractions(orderService);
+    }
+
+    @Test
+    @WithMockUser(username = "user-123")
+    void recoveryResponseIsAcceptedAndStatusLookupUsesAuthenticatedUser() throws Exception {
+        var order = new OrderResponse(1L, "user-123", "COMPENSATING", BigDecimal.TEN, Instant.now(), List.of());
+        when(orderService.createOrder(any(), eq("key"))).thenReturn(order);
+        mockMvc.perform(post("/api/v1/orders").header("Idempotency-Key", "key").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"items\":[{\"productId\":\"1\",\"quantity\":1}]}")).andExpect(status().isAccepted());
+        when(orderService.findAttempt("user-123", "key")).thenReturn(order);
+        mockMvc.perform(get("/api/v1/orders/attempt").header("Idempotency-Key", "key"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("COMPENSATING"));
+        org.mockito.Mockito.verify(orderService).findAttempt("user-123", "key");
+    }
 }

@@ -16,6 +16,10 @@
     <description>Order service for GoCommerce</description>
 
     <dependencies>
+        <dependency>
+            <groupId>com.gocommerce</groupId>
+            <artifactId>platform-security</artifactId>
+        </dependency>
         <!-- Web / REST -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

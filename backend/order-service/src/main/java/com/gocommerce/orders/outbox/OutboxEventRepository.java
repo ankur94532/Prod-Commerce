@@ -23,4 +23,15 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, String
            for update skip locked
            """, nativeQuery = true)
     List<OutboxEvent> findDueForPublishing(@Param("now") Instant now, @Param("limit") int limit);
+
+    /** Unpublished events. A growing backlog means downstream projections are falling behind. */
+    @Query(value = "select count(*) from outbox_events where published_at is null", nativeQuery = true)
+    long countUnpublished();
+
+    /** Age of the oldest unpublished event, in seconds; zero when the outbox is drained. */
+    @Query(value = """
+           select coalesce(extract(epoch from (now() - min(created_at))), 0)
+           from outbox_events where published_at is null
+           """, nativeQuery = true)
+    double oldestUnpublishedSeconds();
 }

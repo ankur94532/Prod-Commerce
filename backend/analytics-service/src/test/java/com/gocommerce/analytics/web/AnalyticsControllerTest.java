@@ -51,9 +51,10 @@ class AnalyticsControllerTest {
     }
 
     @Test
-    void summary_returnsForbidden_forAnonymousUser() throws Exception {
+    void summary_returnsUnauthorized_forAnonymousUser() throws Exception {
+        // Missing credentials answers 401; a signed-in non-admin answers 403.
         mockMvc.perform(get("/api/v1/analytics/summary"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

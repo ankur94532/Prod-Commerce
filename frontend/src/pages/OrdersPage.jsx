@@ -1,8 +1,8 @@
 // src/pages/OrdersPage.jsx
 import React, { useEffect, useState } from "react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/authContextValue";
 import { fetchOrdersForUser } from "../api/orders";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 function OrdersPage() {
   const { user, loading } = useAuth();
@@ -10,8 +10,10 @@ function OrdersPage() {
   const [state, setState] = useState({
     loading: true,
     error: null,
+    userId: null,
   });
   const navigate = useNavigate();
+  const { state: navigationState } = useLocation();
 
   useEffect(() => {
     if (loading) return;
@@ -21,23 +23,27 @@ function OrdersPage() {
       return;
     }
 
-    setState({ loading: true, error: null });
+    let cancelled = false;
 
     fetchOrdersForUser(user.id)
       .then((data) => {
+        if (cancelled) return;
         setOrders(Array.isArray(data) ? data : []);
-        setState({ loading: false, error: null });
+        setState({ loading: false, error: null, userId: user.id });
       })
       .catch((err) => {
+        if (cancelled) return;
         console.error(err);
         setState({
           loading: false,
+          userId: user.id,
           error: "Failed to load orders.",
         });
       });
+    return () => { cancelled = true; };
   }, [loading, user, navigate]);
 
-  if (loading || state.loading) {
+  if (loading || state.loading || state.userId !== user?.id) {
     return (
       <div className="max-w-4xl mx-auto py-6 px-4">
         <p>Loading your orders...</p>
@@ -66,6 +72,7 @@ function OrdersPage() {
     <div className="max-w-4xl mx-auto py-6 px-4">
       <h1 className="text-2xl font-semibold mb-4">My Orders</h1>
 
+      {navigationState?.checkoutNotice && <p role="status" className="mb-4 text-slate-700">{navigationState.checkoutNotice}</p>}
       <div className="space-y-4">
         {orders.map((order) => (
           <div

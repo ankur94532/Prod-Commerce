@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { loginUser } from "../api/auth";
-import { useAuth } from "../context/AuthContext.jsx";
+import { useAuth } from "../context/authContextValue.js";
 
 function Login() {
   const { login } = useAuth();

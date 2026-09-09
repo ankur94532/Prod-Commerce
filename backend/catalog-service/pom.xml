@@ -16,6 +16,10 @@
     <description>Product catalog service for GoCommerce</description>
 
     <dependencies>
+        <dependency>
+            <groupId>com.gocommerce</groupId>
+            <artifactId>platform-security</artifactId>
+        </dependency>
         <!-- REST API -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

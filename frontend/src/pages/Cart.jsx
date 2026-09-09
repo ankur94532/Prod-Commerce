@@ -1,7 +1,7 @@
 // src/pages/Cart.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext.jsx";
+import { useAuth } from "../context/authContextValue.js";
 import { getCart } from "../api/cart";
 import ProductImage from "../components/ProductImage";
 

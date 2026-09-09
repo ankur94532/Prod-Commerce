@@ -20,8 +20,9 @@ public class InternalInventoryController {
      */
     @PostMapping("/{productId}/decrement")
     public ResponseEntity<Void> decrementStock(@PathVariable Long productId,
-                                               @RequestParam(name = "quantity", defaultValue = "1") int quantity) {
-        inventoryService.decrementStock(productId, quantity);
+                                               @RequestParam(name = "quantity") int quantity,
+                                               @RequestHeader("Idempotency-Key") String reservationId) {
+        inventoryService.decrementStock(productId, quantity, reservationId);
         return ResponseEntity.noContent().build();
     }
 
@@ -30,8 +31,9 @@ public class InternalInventoryController {
      */
     @PostMapping("/{productId}/increment")
     public ResponseEntity<Void> incrementStock(@PathVariable Long productId,
-                                               @RequestParam(name = "quantity", defaultValue = "1") int quantity) {
-        inventoryService.incrementStock(productId, quantity);
+                                               @RequestParam(name = "quantity") int quantity,
+                                               @RequestHeader("Idempotency-Key") String reservationId) {
+        inventoryService.incrementStock(productId, quantity, reservationId);
         return ResponseEntity.noContent().build();
     }
 }

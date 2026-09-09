@@ -2,7 +2,7 @@ package com.gocommerce.orders.web;
 
 import com.gocommerce.orders.dto.OrderDtos.CreateOrderRequest;
 import com.gocommerce.orders.dto.OrderDtos.OrderResponse;
-import com.gocommerce.orders.security.AuthenticatedUser;
+import com.gocommerce.platform.security.AuthenticatedUser;
 import com.gocommerce.orders.service.OrderService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -61,8 +61,7 @@ public class OrderController {
     }
 
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public OrderResponse createOrder(@RequestBody @Valid CreateOrderRequest request,
+    public org.springframework.http.ResponseEntity<OrderResponse> createOrder(@RequestBody @Valid CreateOrderRequest request,
                                      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         String authUserId = resolveAuthenticatedUserId();
 
@@ -81,7 +80,18 @@ public class OrderController {
                 request.payment()
         );
 
-        return orderService.createOrder(secureRequest, idempotencyKey);
+        OrderResponse order = orderService.createOrder(secureRequest, idempotencyKey);
+        HttpStatus status = switch (order.status()) {
+            case "PENDING_PAYMENT", "COMPENSATING" -> HttpStatus.ACCEPTED;
+            case "CANCELLED" -> HttpStatus.OK;
+            default -> HttpStatus.CREATED;
+        };
+        return org.springframework.http.ResponseEntity.status(status).body(order);
+    }
+
+    @GetMapping("/attempt")
+    public OrderResponse getAttempt(@RequestHeader("Idempotency-Key") String key) {
+        return orderService.findAttempt(resolveAuthenticatedUserId(), key);
     }
 
     @GetMapping

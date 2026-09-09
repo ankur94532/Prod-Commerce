@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 function initialsFor(name) {
   if (!name) return "PR";
@@ -36,10 +36,14 @@ export default function ProductImage({
   placeholderClassName = "",
 }) {
   const [failed, setFailed] = useState(false);
+  const [failedSrc, setFailedSrc] = useState(src);
 
-  useEffect(() => {
+  // Adjusting state during render is React's documented way to reset state when a prop
+  // changes; an effect would render once with the previous image's failure state.
+  if (src !== failedSrc) {
+    setFailedSrc(src);
     setFailed(false);
-  }, [src]);
+  }
 
   const tone = useMemo(() => toneFor(category || alt), [category, alt]);
   const showImage = src && !failed;

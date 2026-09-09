@@ -5,11 +5,25 @@ spring:
   application:
     name: order-service
 
+  task:
+    scheduling:
+      pool:
+        size: 2 # Recovery HTTP waits must not monopolize the outbox scheduler.
+
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ecom_order}
     username: ${SPRING_DATASOURCE_USERNAME:ecom_user}
     password: ${SPRING_DATASOURCE_PASSWORD:}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      # Checkout holds an order row lock across bounded catalog calls, so a connection is
+      # occupied for the length of those calls. Pool exhaustion shows up as checkout
+      # latency, not as database load: size and alert on it deliberately.
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:5000}
+      validation-timeout: ${DB_POOL_VALIDATION_TIMEOUT_MS:3000}
+      leak-detection-threshold: ${DB_POOL_LEAK_DETECTION_MS:20000}
 
   flyway:
     enabled: true
@@ -31,10 +45,23 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # Stated explicitly: an outbox that publishes to a broker which may lose the write
+      # is not a durable outbox. These are the current client defaults, but a default is
+      # not a guarantee, and a future client or an override could silently weaken them.
+      acks: all
+      retries: 10
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        delivery.timeout.ms: 120000
+        request.timeout.ms: 30000
     properties:
       spring.json.add.type.headers: false
 
 orders:
+  recovery:
+    abandon-after-seconds: ${ORDERS_RECOVERY_ABANDON_AFTER_SECONDS:120}
+    delay-ms: ${ORDERS_RECOVERY_DELAY_MS:5000}
   outbox:
     publisher-delay-ms: ${ORDERS_OUTBOX_PUBLISHER_DELAY_MS:5000}
 

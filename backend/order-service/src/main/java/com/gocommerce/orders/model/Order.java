@@ -43,6 +43,10 @@ public class Order {
     @Column(name = "payment_transaction_id", length = 128)
     private String paymentTransactionId;
 
+    /** Set once a refund has been confirmed by the provider, so it is never issued twice. */
+    @Column(name = "payment_refund_id", length = 128)
+    private String paymentRefundId;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -73,6 +77,22 @@ public class Order {
         this.currency = currency != null ? currency : "INR";
         this.idempotencyKey = idempotencyKey;
         this.idempotencyRequestHash = idempotencyRequestHash;
+    }
+
+    // Existing orders predate the reservation protocol and are not auto-recovered.
+    @Column(nullable = false)
+    private int workflowVersion = 1;
+
+    @Column(nullable = false)
+    private int recoveryAttempts;
+
+    private Instant nextRecoveryAt;
+
+    public int getWorkflowVersion() { return workflowVersion; }
+    public int getRecoveryAttempts() { return recoveryAttempts; }
+    public void scheduleRecovery() {
+        recoveryAttempts++;
+        nextRecoveryAt = Instant.now().plusSeconds(Math.min(300, 1L << Math.min(recoveryAttempts, 8)));
     }
 
     @PrePersist
@@ -114,6 +134,9 @@ public class Order {
 
     public String getPaymentTransactionId() { return paymentTransactionId; }
     public void setPaymentTransactionId(String paymentTransactionId) { this.paymentTransactionId = paymentTransactionId; }
+
+    public String getPaymentRefundId() { return paymentRefundId; }
+    public void setPaymentRefundId(String paymentRefundId) { this.paymentRefundId = paymentRefundId; }
 
     public Instant getCreatedAt() { return createdAt; }
 

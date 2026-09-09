@@ -1,6 +1,7 @@
 package com.gocommerce.catalog.client;
 
 import com.gocommerce.catalog.entity.Product;
+import com.gocommerce.platform.security.InternalServiceTokens;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
@@ -34,13 +35,16 @@ public class SearchIndexClient {
      */
     public SearchIndexClient(@Value("${gocommerce.search.base-url:http://search-service:8084}") String baseUrl,
                              @Value("${gocommerce.search.connect-timeout:2s}") Duration connectTimeout,
-                             @Value("${gocommerce.search.read-timeout:3s}") Duration readTimeout) {
+                             @Value("${gocommerce.search.read-timeout:3s}") Duration readTimeout,
+                             @Value("${security.internal.service-token:}") String internalServiceToken) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(connectTimeout);
         requestFactory.setReadTimeout(readTimeout);
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
                 .requestFactory(requestFactory)
+                // Search index mutation is a service-to-service call and is authenticated as one.
+                .defaultHeader(InternalServiceTokens.HEADER, internalServiceToken)
                 .build();
     }
 

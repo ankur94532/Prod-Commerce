@@ -41,3 +41,10 @@ export async function fetchOrdersForUser(userId) {
 
   return res.data;
 }
+
+export async function fetchCheckoutAttempt(idempotencyKey) {
+  const res = await ordersApi.get("/orders/attempt", {
+    headers: { ...getAuthHeaders(), "Idempotency-Key": idempotencyKey },
+  });
+  return res.data;
+}

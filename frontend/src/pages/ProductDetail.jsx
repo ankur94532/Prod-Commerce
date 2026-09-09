@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { fetchProductBySlug } from "../api/catalog";
 import { addCartItem } from "../api/cart";
-import { useAuth } from "../context/AuthContext.jsx";
+import { useAuth } from "../context/authContextValue.js";
 import ProductImage from "../components/ProductImage";
 
 function ProductDetail() {

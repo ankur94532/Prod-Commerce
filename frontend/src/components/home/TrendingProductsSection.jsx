@@ -18,9 +18,7 @@ export default function TrendingProductsSection() {
   );
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-
+    // loading starts true and error starts null, so there is nothing to reset here.
     getTrendingProducts(5)
       .then((data) => {
         setItems(data || []);

@@ -17,24 +17,34 @@ export default function AdminAnalyticsPage() {
     []
   );
 
-  const fetchSummary = () => {
-    setLoading(true);
-    setError(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
+  // The effect only fetches. loading starts true and the retry handler resets it, so
+  // nothing has to be set synchronously here.
+  useEffect(() => {
+    let active = true;
     getAnalyticsSummary()
       .then((data) => {
-        setSummary(data);
+        if (active) setSummary(data);
       })
       .catch((err) => {
+        if (!active) return;
         console.error("Failed to load analytics summary", err);
         setError("Failed to load analytics. Please try again.");
       })
-      .finally(() => setLoading(false));
-  };
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [reloadToken]);
 
-  useEffect(() => {
-    fetchSummary();
-  }, []);
+  const fetchSummary = () => {
+    setLoading(true);
+    setError(null);
+    setReloadToken((token) => token + 1);
+  };
 
   const totalOrders = summary?.totalOrders ?? 0;
 

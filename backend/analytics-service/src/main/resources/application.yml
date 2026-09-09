@@ -27,13 +27,27 @@ spring:
 
   kafka:
     bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      acks: all
+      retries: 10
+      properties:
+        enable.idempotence: true
+    listener:
+      ack-mode: record
+      # Emits spring_kafka_listener_seconds, which is what the dead-letter alert watches.
+      observation-enabled: true
     consumer:
+      enable-auto-commit: false
       group-id: analytics-service
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
         spring.json.use.type.headers: false
+        # Never project a record from a transaction that has not committed.
+        isolation.level: read_committed
         spring.json.value.default.type: com.gocommerce.analytics.events.OrderCreatedEvent
         spring.json.trusted.packages: com.gocommerce.analytics.events
 
@@ -68,3 +82,12 @@ springdoc:
 security:
   jwt:
     secret: ${SECURITY_JWT_SECRET}
+
+gocommerce:
+  consumer:
+    # A poison record is retried this many times, then parked on <topic>.DLT so the
+    # partition keeps moving. Alert on DLT depth: parked events are not processed events.
+    retry-attempts: ${CONSUMER_RETRY_ATTEMPTS:5}
+    retry-initial-interval: ${CONSUMER_RETRY_INITIAL_INTERVAL:1s}
+    retry-multiplier: ${CONSUMER_RETRY_MULTIPLIER:2.0}
+    retry-max-interval: ${CONSUMER_RETRY_MAX_INTERVAL:30s}

@@ -6,9 +6,9 @@ public interface CatalogClient {
 
     ProductSnapshot getProductSnapshot(String productId);
 
-    void decrementStock(String productId, int quantity);
+    void decrementStock(String productId, int quantity, String reservationId);
 
-    void incrementStock(String productId, int quantity);
+    void incrementStock(String productId, int quantity, String reservationId);
 
     record ProductSnapshot(
             String productId,

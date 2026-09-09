@@ -1,9 +1,10 @@
 // src/pages/Checkout.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "../context/AuthContext.jsx";
+import { useAuth } from "../context/authContextValue.js";
 import { getCart, clearCart } from "../api/cart";
-import { createOrder } from "../api/orders";
+import { createOrder, fetchCheckoutAttempt } from "../api/orders";
+import { submitCheckout, inspectAttempt, startNewAttempt, cleanupPaidCart } from "../checkout/attempt";
 
 function Checkout() {
   const { user } = useAuth();
@@ -17,8 +18,10 @@ function Checkout() {
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvc, setCardCvc] = useState("");
 
+  const submitting = useRef(false);
   const [placing, setPlacing] = useState(false);
   const [paymentError, setPaymentError] = useState("");
+  const [previousOrder, setPreviousOrder] = useState(null);
 
   useEffect(() => {
     if (!user) {
@@ -33,6 +36,8 @@ function Checkout() {
       setError("");
       try {
         const c = await getCart(user.id);
+        const previous = await inspectAttempt(user.id, localStorage, fetchCheckoutAttempt);
+        if (isMounted) setPreviousOrder(previous);
         if (isMounted) {
           setCart(c || { userId: user.id, items: [] });
         }
@@ -95,6 +100,39 @@ function Checkout() {
     0
   );
 
+  if (previousOrder) {
+    const terminal = ["PAID", "CANCELLED"].includes(previousOrder.status);
+    return (
+      <section className="max-w-4xl mx-auto px-4 py-8 space-y-4">
+        <h2 className="text-2xl font-semibold">Previous checkout</h2>
+        <p role="status">Order #{previousOrder.id}: {previousOrder.status}.</p>
+        <p>{terminal ? "Review your cart before starting a new purchase. A paid order may still have items in your cart." : "Checkout is being recovered. Check its status before starting another purchase."}</p>
+        {paymentError && <p role="alert">{paymentError}</p>}
+        <Link to="/orders" className="block text-blue-600 underline">My Orders</Link>
+        <Link to="/cart" className="block text-blue-600 underline">Review cart</Link>
+        {previousOrder.status === "PAID" && <button className="block text-blue-600 underline" onClick={async () => {
+          try {
+            await navigator.locks.request(`checkout:${user.id}`, () => cleanupPaidCart({
+              userId: user.id, items, storage: localStorage, previousOrder, clearCart,
+            }));
+            navigate("/orders", { state: { checkoutNotice: "Order placed. Cart cleared." } });
+          } catch { setPaymentError("Could not clear the purchased cart. Review your cart before retrying."); }
+        }}>Retry cart cleanup</button>}
+        <button className="px-4 py-2 rounded bg-blue-600 text-white" onClick={async () => {
+          try {
+            if (terminal) {
+              await navigator.locks.request(`checkout:${user.id}`, () => startNewAttempt(user.id, localStorage, previousOrder));
+              setPreviousOrder(null);
+              setPaymentError("");
+            } else {
+              setPreviousOrder(await inspectAttempt(user.id, localStorage, fetchCheckoutAttempt));
+            }
+          } catch { setPaymentError("Could not update checkout status. Please retry."); }
+        }}>{terminal ? "Start a new checkout" : "Check order status"}</button>
+      </section>
+    );
+  }
+
   if (!items.length) {
     return (
       <section className="max-w-4xl mx-auto px-4 py-8">
@@ -121,27 +159,23 @@ function Checkout() {
       return;
     }
 
+    if (submitting.current) return;
+    submitting.current = true;
     try {
       setPlacing(true);
-
-      await createOrder({
-        userId: user.id,
-        items,
-        payment: {
-          cardNumber,
-          cardExpiry,
-          cardCvc,
-        },
+      const submit = () => submitCheckout({
+        userId: user.id, items, payment: { cardNumber, cardExpiry, cardCvc },
+        storage: localStorage, createOrder, clearCart, uuid: () => crypto.randomUUID(),
       });
-
-      // clear cart backend + local
-      await clearCart(user.id);
-      setCart({ userId: user.id, items: [] });
-
-      // go to orders page
-      navigate("/orders");
+      if (!navigator.locks) throw new Error("Checkout requires a browser supporting Web Locks.");
+      const { order, warning } = await navigator.locks.request(`checkout:${user.id}`, submit);
+      if (order.status !== "PAID") {
+        setPreviousOrder(order);
+        setPaymentError(warning);
+        return;
+      }
+      navigate("/orders", { state: { checkoutNotice: warning || `Order #${order.id} placed.` } });
     } catch (err) {
-      console.error(err);
       const backendMessage =
         err?.response?.data?.message ||
         err?.response?.data?.error ||
@@ -149,6 +183,7 @@ function Checkout() {
         "Failed to place order. Please try again.";
       setPaymentError(backendMessage);
     } finally {
+      submitting.current = false;
       setPlacing(false);
     }
   };

@@ -72,7 +72,7 @@ public class HttpCatalogClient implements CatalogClient {
     @Override
     @CircuitBreaker(name = "catalogClient", fallbackMethod = "decrementStockFallback")
     @Retry(name = "catalogClient")
-    public void decrementStock(String productId, int quantity) {
+    public void decrementStock(String productId, int quantity, String reservationId) {
         String url = UriComponentsBuilder.fromHttpUrl(baseUrl)
                 .path("/api/v1/internal/inventory/products/{productId}/decrement")
                 .queryParam("quantity", quantity)
@@ -82,7 +82,7 @@ public class HttpCatalogClient implements CatalogClient {
         ResponseEntity<Void> response = restTemplate.exchange(
                 url,
                 HttpMethod.POST,
-                new HttpEntity<>(internalHeaders()),
+                new HttpEntity<>(reservationHeaders(reservationId)),
                 Void.class
         );
 
@@ -97,7 +97,7 @@ public class HttpCatalogClient implements CatalogClient {
     @Override
     @CircuitBreaker(name = "catalogClient", fallbackMethod = "incrementStockFallback")
     @Retry(name = "catalogCompensation")
-    public void incrementStock(String productId, int quantity) {
+    public void incrementStock(String productId, int quantity, String reservationId) {
         String url = UriComponentsBuilder.fromHttpUrl(baseUrl)
                 .path("/api/v1/internal/inventory/products/{productId}/increment")
                 .queryParam("quantity", quantity)
@@ -107,7 +107,7 @@ public class HttpCatalogClient implements CatalogClient {
         ResponseEntity<Void> response = restTemplate.exchange(
                 url,
                 HttpMethod.POST,
-                new HttpEntity<>(internalHeaders()),
+                new HttpEntity<>(reservationHeaders(reservationId)),
                 Void.class
         );
 
@@ -117,6 +117,12 @@ public class HttpCatalogClient implements CatalogClient {
                             ", status=" + response.getStatusCode()
             );
         }
+    }
+
+    private HttpHeaders reservationHeaders(String reservationId) {
+        HttpHeaders headers = internalHeaders();
+        headers.set("Idempotency-Key", reservationId);
+        return headers;
     }
 
     private HttpHeaders internalHeaders() {
@@ -134,12 +140,12 @@ public class HttpCatalogClient implements CatalogClient {
     }
 
     @SuppressWarnings("unused")
-    private void decrementStockFallback(String productId, int quantity, Throwable ex) {
+    private void decrementStockFallback(String productId, int quantity, String reservationId, Throwable ex) {
         throw new IllegalStateException("Catalog stock decrement unavailable for product " + productId, ex);
     }
 
     @SuppressWarnings("unused")
-    private void incrementStockFallback(String productId, int quantity, Throwable ex) {
+    private void incrementStockFallback(String productId, int quantity, String reservationId, Throwable ex) {
         throw new IllegalStateException("Catalog stock compensation unavailable for product " + productId, ex);
     }
 

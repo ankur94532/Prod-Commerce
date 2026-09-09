@@ -1,258 +1,83 @@
 package com.gocommerce.orders.service;
 
-import com.gocommerce.orders.client.CatalogClient;
-import com.gocommerce.orders.client.CatalogClient.ProductSnapshot;
-import com.gocommerce.orders.dto.OrderDtos.CreateOrderItemRequest;
-import com.gocommerce.orders.dto.OrderDtos.CreateOrderRequest;
-import com.gocommerce.orders.dto.OrderDtos.OrderItemResponse;
-import com.gocommerce.orders.dto.OrderDtos.OrderResponse;
-import com.gocommerce.orders.exception.IdempotencyConflictException;
-import com.gocommerce.orders.exception.PaymentFailedException;
-import com.gocommerce.orders.metrics.OrderMetrics;
+import com.gocommerce.orders.dto.OrderDtos.*;
 import com.gocommerce.orders.model.Order;
-import com.gocommerce.orders.model.OrderItem;
-import com.gocommerce.orders.model.OrderStatus;
-import com.gocommerce.orders.outbox.OrderOutboxService;
-import com.gocommerce.orders.payment.PaymentChargeRequest;
-import com.gocommerce.orders.payment.PaymentProvider;
-import com.gocommerce.orders.payment.PaymentResult;
 import com.gocommerce.orders.repository.OrderRepository;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HexFormat;
-import java.util.List;
+import java.util.*;
 
 @Service
 public class OrderService {
+    private final OrderIntentService intents;
+    private final OrderWorkflow workflow;
+    private final OrderRepository orders;
 
-    private final OrderRepository orderRepository;
-    private final OrderOutboxService orderOutboxService;
-    private final OrderMetrics orderMetrics;
-    private final PaymentProvider paymentProvider;
-    private final CatalogClient catalogClient;
-
-    @Autowired
-    public OrderService(OrderRepository orderRepository,
-                        OrderOutboxService orderOutboxService,
-                        OrderMetrics orderMetrics,
-                        PaymentProvider paymentProvider,
-                        CatalogClient catalogClient) {
-        this.orderRepository = orderRepository;
-        this.orderOutboxService = orderOutboxService;
-        this.orderMetrics = orderMetrics;
-        this.paymentProvider = paymentProvider;
-        this.catalogClient = catalogClient;
+    public OrderService(OrderIntentService intents, OrderWorkflow workflow, OrderRepository orders) {
+        this.intents = intents; this.workflow = workflow; this.orders = orders;
     }
 
-    /**
-     * Kept for older unit tests. New production code should use the full constructor.
-     */
-    public OrderService(OrderRepository orderRepository,
-                        OrderOutboxService orderOutboxService,
-                        CatalogClient catalogClient) {
-        this(orderRepository, orderOutboxService, null, req -> PaymentResult.success("test", "test-tx"), catalogClient);
-    }
+    public OrderResponse createOrder(CreateOrderRequest request) { return createOrder(request, null); }
 
-    @Transactional(noRollbackFor = PaymentFailedException.class)
-    public OrderResponse createOrder(CreateOrderRequest request) {
-        return createOrder(request, null);
-    }
-
-    @Transactional(noRollbackFor = PaymentFailedException.class)
     public OrderResponse createOrder(CreateOrderRequest request, String idempotencyKey) {
-        if (request.items() == null || request.items().isEmpty()) {
-            throw new IllegalArgumentException("Order must contain at least one item");
+        if (request == null || request.userId() == null || request.userId().isBlank()
+                || request.items() == null || request.items().isEmpty()) {
+            throw new IllegalArgumentException("User and nonempty items required");
         }
-
-        String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
-        String requestHash = normalizedIdempotencyKey != null ? hashIdempotencyRequest(request) : null;
-
-        if (normalizedIdempotencyKey != null) {
-            var existing = orderRepository.findByUserIdAndIdempotencyKey(request.userId(), normalizedIdempotencyKey);
-            if (existing.isPresent()) {
-                Order existingOrder = existing.get();
-                if (existingOrder.getIdempotencyRequestHash() != null
-                        && !existingOrder.getIdempotencyRequestHash().equals(requestHash)) {
-                    throw new IdempotencyConflictException(
-                            "Idempotency-Key was already used with a different order payload"
-                    );
-                }
-                return toResponse(existingOrder);
+        Set<String> seen = new HashSet<>();
+        for (var item : request.items()) {
+            if (item == null || item.productId() == null || item.productId().isBlank() || item.quantity() <= 0
+                    || !seen.add(item.productId())) {
+                throw new IllegalArgumentException("Items require unique product IDs and positive quantities");
             }
         }
-
-        List<PricedOrderLine> pricedLines = priceFromCatalog(request.items());
-        String currency = validateAndResolveCurrency(pricedLines);
-        BigDecimal total = pricedLines.stream()
-                .map(PricedOrderLine::lineTotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        if (orderMetrics != null) {
-            orderMetrics.onOrderCreated();
-            orderMetrics.recordOrderValue(total);
-        }
-
-        Order order = new Order(
-                request.userId(),
-                OrderStatus.PENDING_PAYMENT,
-                total,
-                currency,
-                normalizedIdempotencyKey,
-                requestHash
-        );
-
-        for (PricedOrderLine line : pricedLines) {
-            ProductSnapshot product = line.product();
-            order.addItem(new OrderItem(
-                    product.productId(),
-                    product.productName(),
-                    line.quantity(),
-                    product.unitPrice()
-            ));
-        }
-
-        Order saved = orderRepository.save(order);
-
-        List<PricedOrderLine> decremented = new ArrayList<>();
-        try {
-            for (PricedOrderLine line : pricedLines) {
-                catalogClient.decrementStock(line.product().productId(), line.quantity());
-                decremented.add(line);
-            }
-        } catch (RuntimeException e) {
-            compensateStock(decremented);
-            throw e;
-        }
-
-        if (paymentProvider != null) {
-            String cardNumber = request.payment() != null ? request.payment().cardNumber() : null;
-
-            PaymentChargeRequest chargeRequest = new PaymentChargeRequest(
-                    total,
-                    currency,
-                    cardNumber,
-                    "Order " + saved.getId() + " for user " + request.userId()
-            );
-
-            PaymentResult result;
-            try {
-                result = paymentProvider.charge(chargeRequest);
-            } catch (RuntimeException e) {
-                compensateStock(decremented);
-                saved.setStatus(OrderStatus.CANCELLED);
-                orderRepository.save(saved);
-                throw new PaymentFailedException("Payment processing error: " + e.getMessage());
-            }
-
-            if (!result.success()) {
-                compensateStock(decremented);
-                saved.setStatus(OrderStatus.CANCELLED);
-                orderRepository.save(saved);
-                throw new PaymentFailedException("Payment failed: " + result.failureReason());
-            }
-            saved.setPaymentProvider(result.provider());
-            saved.setPaymentTransactionId(result.transactionId());
-        }
-
-        saved.setStatus(OrderStatus.PAID);
-        saved = orderRepository.save(saved);
-        orderOutboxService.enqueueOrderCreated(saved);
-
-        if (orderMetrics != null) {
-            orderMetrics.onOrderCompleted();
-        }
-
-        return toResponse(saved);
+        // Legacy callers without keys remain supported, but cannot safely retry after a lost response.
+        String key = idempotencyKey == null ? UUID.randomUUID().toString() : idempotencyKey.trim();
+        if (key.isEmpty() || key.length() > 128) throw new IllegalArgumentException("Idempotency-Key must contain 1–128 characters");
+        var intent = intents.prepare(request, key, hashRequest(request));
+        // Only the creator may start payment. A replay never resumes an ambiguous payment attempt.
+        return workflow.process(intent.orderId(), intent.created() ? request.payment() : null, intent.created());
     }
 
     @Transactional(readOnly = true)
     public List<OrderResponse> listOrdersForUser(String userId) {
-        return orderRepository.findByUserIdOrderByCreatedAtDesc(userId)
-                .stream()
-                .map(this::toResponse)
-                .toList();
+        return orders.findByUserIdOrderByCreatedAtDesc(userId).stream().map(OrderService::toResponse).toList();
     }
 
-    private List<PricedOrderLine> priceFromCatalog(List<CreateOrderItemRequest> requestItems) {
-        return requestItems.stream()
-                .map(item -> {
-                    ProductSnapshot product = catalogClient.getProductSnapshot(item.productId());
-                    if (product.unitPrice() == null) {
-                        throw new IllegalStateException("Catalog returned null price for product " + item.productId());
-                    }
-                    return new PricedOrderLine(product, item.quantity());
-                })
-                .toList();
+    @Transactional(readOnly = true)
+    public OrderResponse findAttempt(String userId, String key) {
+        return orders.findByUserIdAndIdempotencyKey(userId, key.trim()).map(OrderService::toResponse)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND));
     }
 
-    private String validateAndResolveCurrency(List<PricedOrderLine> pricedLines) {
-        String currency = pricedLines.get(0).product().currency() != null
-                ? pricedLines.get(0).product().currency()
-                : "INR";
-        boolean mixedCurrency = pricedLines.stream()
-                .map(line -> line.product().currency() != null ? line.product().currency() : "INR")
-                .anyMatch(lineCurrency -> !lineCurrency.equals(currency));
-        if (mixedCurrency) {
-            throw new IllegalStateException("Mixed-currency orders are not supported");
-        }
-        return currency;
-    }
-
-    private void compensateStock(List<PricedOrderLine> decremented) {
-        for (PricedOrderLine line : decremented) {
-            try {
-                catalogClient.incrementStock(line.product().productId(), line.quantity());
-            } catch (RuntimeException ignored) {
-                // In production this should emit an alert and compensating-retry task.
-            }
-        }
-    }
-
-    private String normalizeIdempotencyKey(String idempotencyKey) {
-        if (idempotencyKey == null || idempotencyKey.isBlank()) {
-            return null;
-        }
-        String trimmed = idempotencyKey.trim();
-        if (trimmed.length() > 128) {
-            throw new IllegalArgumentException("Idempotency-Key must be at most 128 characters");
-        }
-        return trimmed;
-    }
-
-    private String hashIdempotencyRequest(CreateOrderRequest request) {
+    static String legacyHashRequest(CreateOrderRequest request) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update(nullToEmpty(request.userId()).getBytes(StandardCharsets.UTF_8));
-            digest.update((byte) '|');
-
-            request.items().stream()
-                    .sorted(Comparator.comparing(CreateOrderItemRequest::productId))
-                    .forEach(item -> {
-                        digest.update(nullToEmpty(item.productId()).getBytes(StandardCharsets.UTF_8));
-                        digest.update((byte) ':');
-                        digest.update(Integer.toString(item.quantity()).getBytes(StandardCharsets.UTF_8));
-                        digest.update((byte) '|');
-                    });
-
+            digest.update((request.userId() + "|").getBytes(StandardCharsets.UTF_8));
+            request.items().stream().sorted(Comparator.comparing(CreateOrderItemRequest::productId)).forEach(item ->
+                    digest.update((item.productId() + ":" + item.quantity() + "|").getBytes(StandardCharsets.UTF_8)));
             return HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is not available", e);
-        }
+        } catch (NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
     }
 
-    private String nullToEmpty(String value) {
-        return value == null ? "" : value;
+    static String hashRequest(CreateOrderRequest request) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            // Length-prefix strings; payment credentials are deliberately never persisted or hashed.
+            request.items().stream().sorted(Comparator.comparing(CreateOrderItemRequest::productId)).forEach(item -> {
+                byte[] id = item.productId().getBytes(StandardCharsets.UTF_8);
+                digest.update(java.nio.ByteBuffer.allocate(4).putInt(id.length).array());
+                digest.update(id);
+                digest.update(java.nio.ByteBuffer.allocate(4).putInt(item.quantity()).array());
+            });
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
     }
 
-    private OrderResponse toResponse(Order order) {
+    static OrderResponse toResponse(Order order) {
         List<OrderItemResponse> itemResponses = order.getItems().stream()
                 .map(i -> new OrderItemResponse(
                         i.getId(),
@@ -274,9 +99,4 @@ public class OrderService {
         );
     }
 
-    private record PricedOrderLine(ProductSnapshot product, int quantity) {
-        BigDecimal lineTotal() {
-            return product.unitPrice().multiply(BigDecimal.valueOf(quantity));
-        }
-    }
 }

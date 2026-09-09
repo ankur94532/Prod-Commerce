@@ -1,41 +1,48 @@
 package com.gocommerce.orders.config;
 
-import com.gocommerce.orders.security.JwtAuthenticationFilter;
-import com.gocommerce.orders.security.JwtService;
+import com.gocommerce.platform.security.JwtAuthenticationFilter;
+import com.gocommerce.platform.security.JwtProperties;
+import com.gocommerce.platform.security.JwtVerifier;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @EnableWebSecurity
 @Configuration
+@EnableConfigurationProperties(JwtProperties.class)
 public class SecurityConfig {
 
-    private final JwtService jwtService;
-
-    public SecurityConfig(JwtService jwtService) {
-        this.jwtService = jwtService;
+    @Bean
+    public JwtVerifier jwtVerifier(JwtProperties properties) {
+        return new JwtVerifier(properties);
     }
 
     @Bean
-    public JwtAuthenticationFilter jwtAuthenticationFilter() {
-        return new JwtAuthenticationFilter(jwtService);
+    public JwtAuthenticationFilter jwtAuthenticationFilter(JwtVerifier jwtVerifier) {
+        return new JwtAuthenticationFilter(jwtVerifier);
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter)
+            throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
+                .exceptionHandling(handling -> handling
+                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/orders/health").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())
-                .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 }
