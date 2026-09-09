@@ -1,0 +1,126 @@
+{
+  "recorded_at_utc": "2026-09-09T04:00:41.233210+00:00",
+  "phase": "remaining production-readiness items after tier 1 and tier 2",
+  "evidence_class": "local_verification_only",
+  "not_deployed": "no change was applied to any running service; the only cluster interaction was a self-cleaning scratch namespace used to test NetworkPolicy enforcement",
+  "items": {
+    "4_atomic_reindexing": {
+      "status": "implemented and verified",
+      "detail": "products is now an alias over a timestamped index; a rebuild fills a new index and moves the alias atomically, and is refused if the document count disagrees with the catalog's declared total",
+      "tests": "8 Elasticsearch integration tests plus 4 rewritten unit tests",
+      "found": "the pre-existing consistency check compared the received pages only against each other, so a truncated catalog pagination would have published a short index as consistent"
+    },
+    "1_payment_robustness": {
+      "status": "implemented and verified, provider still a mock",
+      "detail": "charge/refund keyed by idempotency key; lookup added so recovery asks the provider whether a charge happened before cancelling; unreachable provider defers instead of cancelling; refunds issued once and recorded in payment_refund_id",
+      "tests": "9 provider tests and 6 workflow reconciliation tests against PostgreSQL",
+      "found": "the mock's check-then-put let 8 concurrent retries create 8 charges; now an atomic claim"
+    },
+    "6_reproducible_load_testing": {
+      "status": "harness implemented and self-verified; no application benchmark run",
+      "detail": "seeded 10k-corpus query sets, declared cold/warm/mixed cache regimes, constant arrival rate, summary manifest with provenance and zero-result counts",
+      "tests": "ops/testing/load-harness.sh drives k6 against a stub and asserts regime behaviour and that an unreachable target reports 100% failure",
+      "found": "the hey parser computed its error rate from displayed HTTP statuses only, so dropped requests were invisible; it now counts the error distribution and flags the 1M sample cap"
+    },
+    "7_point_in_time_recovery": {
+      "status": "implemented and verified",
+      "detail": "WAL archiving enabled on the Compose PostgreSQL; ops/backup/pitr-drill.sh restores to a chosen instant and proves a table dropped after the target is recovered"
+    },
+    "9_role_migration": {
+      "status": "implemented and verified",
+      "detail": "idempotent migration script; 23 checks covering data preservation, DDL by the new owner, and cross-database denial",
+      "found": "REASSIGN OWNED fails when the legacy role owns system objects; ownership is now transferred object by object"
+    },
+    "10_frontend_lint": {
+      "status": "implemented",
+      "detail": "all 7 pre-existing errors fixed across 5 components; CI now gates the whole frontend"
+    },
+    "2_alert_delivery": {
+      "status": "wireable, still not delivering",
+      "detail": "receivers read their destination from mounted secret files, so wiring a pager is a secret change; multi-window burn-rate alerting added (fast 14.4x, slow 6x)",
+      "remaining": "no destination is configured, so nobody is paged yet"
+    },
+    "3_slo_measurement": {
+      "status": "machinery added, nothing measured",
+      "detail": "error-budget and latency recording rules added; the load harness can now produce comparable measurements",
+      "remaining": "no objective has been measured against production traffic, because there is none"
+    },
+    "8_networkpolicy_enforcement": {
+      "status": "verified as NOT enforced on this cluster",
+      "detail": "ops/testing/networkpolicy-enforcement.sh applied a default-deny policy in a scratch namespace and traffic still flowed",
+      "consequence": "every NetworkPolicy in k8s/ is inert on docker-desktop; pod-to-pod isolation rests on the service tokens alone until an enforcing CNI is installed"
+    },
+    "5_graded_search_evaluation": {
+      "status": "not done, and not doable without human judgement",
+      "detail": "the harness, rubric, and query set exist and are tested. What is missing is graded relevance labels, which are human labour. Fabricating them would make every number downstream a lie."
+    }
+  },
+  "suites": [
+    {
+      "name": "Backend unit and API",
+      "tests": 257,
+      "failures": 0,
+      "skipped": 50,
+      "note": "skips are Docker-gated suites run by the scripts below; was 160 before this work began"
+    },
+    {
+      "name": "Checkout reliability (PostgreSQL)",
+      "postgresql_tests": 36,
+      "frontend_checkout_tests": 10
+    },
+    {
+      "name": "Search Elasticsearch contracts",
+      "executions": 18
+    },
+    {
+      "name": "Graded evaluation harness",
+      "tests": 104
+    },
+    {
+      "name": "Database role isolation",
+      "checks": 26
+    },
+    {
+      "name": "Database role migration",
+      "checks": 23
+    },
+    {
+      "name": "Frontend",
+      "tests": 21,
+      "lint": "clean across the whole app"
+    },
+    {
+      "name": "ops/testing/verify-all.sh",
+      "steps": 15,
+      "result": "all pass"
+    }
+  ],
+  "source_fingerprint": {
+    "backend/search-service/src/main/java/com/gocommerce/search/service/SearchIndexManager.java": "ea9b11de72ae1959baccb0614e16b3401ef2ab7b33132d8db3d90a67985deb61",
+    "backend/search-service/src/main/java/com/gocommerce/search/service/SearchService.java": "759c758751d9b56c866cb71c8ca8f3eda31e35d11412e7e01002ed77fa6cf603",
+    "backend/search-service/src/main/java/com/gocommerce/search/service/ReindexResult.java": "1443463d1f54ba94679010d9758dbf94b37771d437dde095a6cdd72136e8db25",
+    "backend/order-service/src/main/java/com/gocommerce/orders/payment/PaymentProvider.java": "bc1a2fbafd29dc85d8f474b87c2afbee57cf5e7dacf0d6d099d5b149a943db82",
+    "backend/order-service/src/main/java/com/gocommerce/orders/payment/MockStripePaymentProvider.java": "a594fb3e2412de870fa8908464f2e13247d204e5c22d9f94664f4b0772a12d93",
+    "backend/order-service/src/main/java/com/gocommerce/orders/service/OrderWorkflow.java": "6607c6cfd90cec293b215faba011096fcb508b737bf1995d50113ac03521edb0",
+    "backend/order-service/src/main/resources/db/migration/V5__payment_refunds.sql": "a738768e9705dba87381c7aabf454bc897386a66cbdc4719f946fd0f9f457cf6",
+    "backend/search-service/scripts/search_engineering_metrics.py": "a0a9e1a02fad0de7a4df8eb4ae81d2339ff4efa1e62ab47f9ba2b634dbcedca1",
+    "ops/k6/search-load.js": "8c08dc1f9ca7dc6e4aa32a289e781ddb723874d032e71c158e58c88ee5eb08fb",
+    "ops/k6/build-query-set.py": "2ca15889089a6c2901a6eb2508d2f72711989a7ff9ca7af225b75e60fe49cab3",
+    "ops/backup/pitr-drill.sh": "436a5e67e1a2d00ee66aab9fbe6391ee1dd24294719faaf407a2b86183182b09",
+    "ops/migrations/apply-database-roles.sh": "478fc6d1ade04f8004cb97c1c90f3618d895c560ff46f2cf6744d3d6becd9447",
+    "ops/testing/networkpolicy-enforcement.sh": "16a5eb24bee96a97dcd6813004e7a58b67e68af46185e15d615a5c7556826485",
+    "ops/testing/load-harness.sh": "81a83ced307904dceb3e01e91462805461b410ac19383fdd214f406d672eade0",
+    "ops/testing/database-role-migration.sh": "4d5363875e89ad446417260a4a7ebf23587ebc3452f8b3e199894bdd1d7f7c80",
+    "ops/prometheus/rules/gocommerce.rules.yml": "13d8535d6cb800147f0995bc4aebe7ff5349ee9163a3c1563617549eced7b032",
+    "ops/alertmanager/alertmanager.yml": "ba18476971220ac9efa408e3288c8f547148378ad52591a4d8b37ab3d8ce73be"
+  },
+  "limitations": [
+    "No graded relevance evaluation exists; queries.v1.json remains AI-authored and unjudged.",
+    "No load benchmark was run against the application: the harness is verified, the system is not measured.",
+    "Alertmanager has no destination configured, so no alert reaches a human yet.",
+    "NetworkPolicy is not enforced on the local cluster; the manifests are inert there.",
+    "The payment provider is still a mock with in-process memory and no settlement reconciliation.",
+    "WAL archiving has no retention policy; the archive grows without bound.",
+    "Nothing was deployed, and no SLO has been measured against real traffic."
+  ]
+}

@@ -46,3 +46,10 @@ backend/search-service/scripts/*-report.md
 # Python cache
 __pycache__/
 *.pyc
+
+# Alerting destinations are credentials, not configuration.
+ops/alertmanager/secrets/*-url
+
+# Generated load-test inputs and outputs; rebuild with ops/k6/build-query-set.py
+ops/k6/query-set.json
+ops/k6/results/*.json

@@ -3,7 +3,23 @@ kind: Ingress
 metadata:
   name: gocommerce-api
   namespace: gocommerce
+  annotations:
+    # Terminate TLS and refuse plaintext. The previous ingress served the whole API,
+    # including sign-in, over http.
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+    # A ceiling per client IP. The gateway's Redis limiter is the per-route control; this
+    # is the blunt one that survives a gateway that is already saturated.
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "4"
 spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - gocommerce.local
+      secretName: gocommerce-api-tls
   rules:
     - host: gocommerce.local
       http:

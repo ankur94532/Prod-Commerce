@@ -1,34 +1,57 @@
-# k6 Load Tests
+# Load tests
 
-Run these from the repository root after the Docker Compose stack and API Gateway are up.
+The old benchmark cycled five hard-coded queries across every virtual user, so after a few
+seconds almost every request was a cache hit: it measured Redis, not search. These runs
+declare their cache regime and draw from a large seeded query set.
 
-Install k6:
-
-```bash
-brew install k6
-```
-
-Mixed-query search benchmark with a warmup phase and a 10-minute benchmark phase:
+## Build a query set
 
 ```bash
-k6 run ops/k6/search-load.js
+python3 ops/k6/build-query-set.py --out ops/k6/query-set.json --count 2000 --seed 42
 ```
 
-Production-style search benchmark knobs:
+Deterministic for a given seed, and it records the corpus checksum so two runs can be
+compared. The corpus is catalog-derived synthetic queries — **not shopper traffic**.
+
+## Run
 
 ```bash
-BASE_URL=http://localhost:8080 \
-WARMUP_VUS=10 \
-WARMUP_DURATION=5m \
-BENCHMARK_VUS=50 \
-BENCHMARK_DURATION=10m \
-k6 run ops/k6/search-load.js
+# Cold: every request a query no virtual user has issued in this run. The pessimistic bound.
+BASE_URL=http://localhost:8080 CACHE_REGIME=cold TARGET_RPS=200 BENCHMARK_DURATION=5m \
+SUMMARY_OUT=ops/k6/results/cold.json k6 run ops/k6/search-load.js
+
+# Warm: a tiny repeating set, served from cache. The optimistic bound; label it as one.
+CACHE_REGIME=warm ... k6 run ops/k6/search-load.js
+
+# Mixed: a popular head plus a long tail, closest to real traffic shape.
+CACHE_REGIME=mixed MIXED_HEAD_SIZE=20 MIXED_HEAD_SHARE=0.7 ... k6 run ops/k6/search-load.js
+
+# One retrieval mode at a time, to compare their cost.
+SEARCH_MODE=hybrid_rrf ... k6 run ops/k6/search-load.js
 ```
 
-Repeated-query cache benchmark:
+The scenario uses a **constant arrival rate**, not fixed virtual users. A fixed-VU test
+slows its own request rate when the system slows down, which hides the degradation it is
+meant to reveal.
 
-```bash
-SEARCH_QUERY=iphone VUS=20 DURATION=2m k6 run ops/k6/cache-comparison.js
-```
+## Reading the summary
 
-The scripts write JSON summaries into `ops/k6/results/` and print resume-ready latency, throughput and error-rate numbers to stdout.
+Each run writes JSON containing the parameters, the query-set provenance, and:
+
+- `failed_rate` — k6 counts a request that never completed, so timeouts and refused
+  connections are included. This is what the older `hey`-based script got wrong.
+- `distinct_query_requests` / `repeat_query_requests` — evidence of which regime actually ran.
+- `zero_result_responses` — a fast run that returns nothing is what an empty index looks
+  like. Counting it stops that passing for success.
+
+## What these numbers are not
+
+They describe this environment, this data volume, and a synthetic query mix. They are not a
+capacity model, and a warm-regime figure is an upper bound. No number here has been measured
+against production traffic, because there is none.
+
+## Verifying the harness
+
+`ops/testing/load-harness.sh` runs the harness against a stub server and checks query-set
+determinism, both regimes, transport-error accounting, and the summary shape. It needs no
+running stack, and it measures the harness rather than the application.

@@ -1,0 +1,81 @@
+# Without these, any pod in the cluster can call any service directly, which means the
+# internal inventory and search-index endpoints are reachable without passing the gateway.
+# NetworkPolicy is enforced only by a CNI that supports it; on a cluster without one these
+# objects are accepted and ignored. Verify enforcement before relying on it.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: gocommerce
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# The gateway is the only entry point from outside the namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-ingress
+  namespace: gocommerce
+spec:
+  podSelector:
+    matchLabels:
+      app: api-gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Application services accept traffic from the gateway and from each other, because
+# order calls catalog, catalog calls search, and search calls recommendation and embedding.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: intra-namespace-service-traffic
+  namespace: gocommerce
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - auth-service
+          - catalog-service
+          - cart-service
+          - search-service
+          - order-service
+          - analytics-service
+          - recommendation-service
+          - embedding-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+---
+# Scraping and probes reach the management port from the monitoring namespace only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metrics-scraping
+  namespace: gocommerce
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090

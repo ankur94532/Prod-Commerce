@@ -1,0 +1,46 @@
+# Receivers read their destination from a mounted file rather than an inline URL, so a
+# paging integration is wired by providing a secret, not by editing this file or committing
+# a webhook URL. Alertmanager fails to start if a referenced file is absent, which is the
+# behaviour you want: a silently unwired pager is worse than a config error.
+#
+#   Compose:    ops/alertmanager/secrets/{pager,tickets}-url  (gitignored)
+#   Kubernetes: the gocommerce-alerting Secret, see k8s/alertmanager-secret.example.yaml
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: tickets
+  group_by: ["alertname", "service"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = "page"
+      receiver: pager
+      # A customer is affected or money is stuck: wake someone.
+      group_wait: 0s
+      repeat_interval: 1h
+    - matchers:
+        - severity = "ticket"
+      receiver: tickets
+
+receivers:
+  - name: pager
+    webhook_configs:
+      - url_file: /etc/alertmanager/secrets/pager-url
+        send_resolved: true
+  - name: tickets
+    webhook_configs:
+      - url_file: /etc/alertmanager/secrets/tickets-url
+        send_resolved: true
+
+inhibit_rules:
+  # A down service will trip its own latency and error alerts; page once.
+  - source_matchers: [alertname = "ServiceDown"]
+    target_matchers: [severity =~ "ticket|page"]
+    equal: ["service"]
+  # While the budget is burning fast, the slower window is not news.
+  - source_matchers: [alertname = "GatewayErrorBudgetBurningFast"]
+    target_matchers: [alertname = "GatewayErrorBudgetBurningSlowly"]
+    equal: ["slo"]

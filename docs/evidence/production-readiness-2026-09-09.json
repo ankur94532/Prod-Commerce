@@ -1,0 +1,98 @@
+{
+  "recorded_at_utc": "2026-09-08T20:06:11.060633+00:00",
+  "phase": "production readiness: tier 1 (items 1-4) and tier 2 (items 5-12)",
+  "evidence_class": "local_verification_only",
+  "not_deployed": "no change was applied to any running cluster; k8s and Compose changes are validated, not rolled out",
+  "suites": [
+    {
+      "name": "Backend unit and API tests",
+      "command": "mvn -f backend/pom.xml test",
+      "tests": 233,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 36,
+      "note": "36 skipped are Docker-gated PostgreSQL and Elasticsearch tests, run by the scripts below; was 160 tests before this work"
+    },
+    {
+      "name": "Checkout reliability",
+      "command": "ops/testing/checkout-reliability.sh",
+      "postgresql_tests": 30,
+      "frontend_checkout_tests": 10,
+      "skipped": 0,
+      "note": "includes 6 new tests for the recovery and outbox backlog gauges"
+    },
+    {
+      "name": "Database role isolation",
+      "command": "ops/testing/database-isolation.sh",
+      "checks": 26,
+      "result": "pass",
+      "note": "each of 5 roles reaches its own database and is denied the other 4"
+    },
+    {
+      "name": "Search retrieval contracts",
+      "command": "ops/testing/search-retrieval.sh",
+      "executions": 10,
+      "skipped": 0
+    },
+    {
+      "name": "Graded evaluation harness",
+      "command": "ops/testing/search-evaluation.sh",
+      "tests": 104,
+      "skipped": 0
+    },
+    {
+      "name": "Frontend",
+      "command": "node --test \"src/**/*.test.js\"",
+      "tests": 21,
+      "note": "11 new session and token-refresh tests; lint clean in owned directories; build succeeds"
+    },
+    {
+      "name": "Configuration validation",
+      "command": "ops/testing/verify-all.sh",
+      "checks": [
+        "kubectl apply --dry-run=client -k k8s (47 objects)",
+        "kubectl apply --dry-run=client -k deploy/overlays/production (47 objects)",
+        "docker compose config",
+        "promtool check config (15 alert rules)",
+        "amtool check-config"
+      ]
+    }
+  ],
+  "manual_verifications": [
+    "KRaft Kafka broker started from the new Compose settings in an isolated container: ready in 3s, topic creation succeeded, metadata quorum healthy",
+    "auth-service image built from source with the new multi-stage Dockerfile: runs as uid 10001, Spring Boot starts under the layered JarLauncher on Java 21, fails only on the absent database",
+    "backup and restore drill executed end to end against disposable PostgreSQL: 5 databases dumped, checksums verified, restored table counts matched the manifest"
+  ],
+  "source_fingerprint": {
+    "backend/platform-security/src/main/java/com/gocommerce/platform/security/JwtVerifier.java": "f8d2900ad8a19a74e72f56a80eaba1c77cf140f583bfcad0779b06bf2b9d4c47",
+    "backend/platform-security/src/main/java/com/gocommerce/platform/security/JwtIssuer.java": "1819a220a01e9ec54b22a32f5ef93ee0509780fdf40588c596cf4d0193b4c4fc",
+    "backend/platform-security/src/main/java/com/gocommerce/platform/security/JwtAuthenticationFilter.java": "4386bd7221a81968d1349a07230e4c1d8fefba46247e213198e4d568e03f05a2",
+    "backend/platform-security/src/main/java/com/gocommerce/platform/security/InternalServiceTokenFilter.java": "bd3fd5b9e20c2085000c77abcaaba192cad3b5bfdd439fc88ec8331dbb5caa01",
+    "backend/platform-security/src/main/java/com/gocommerce/platform/security/InternalServiceAuthenticationFilter.java": "b8d34741c932dcb22c3dce4e2294029bb7764a1e04ff0860c2615a748f26152b",
+    "backend/api-gateway/src/main/java/com/gocommerce/gateway/security/AuthHeaderFilter.java": "4550fc7683ec6a943809437425b499f1d6af001a49c6a078a2e2c6bad9a694dd",
+    "backend/search-service/src/main/java/com/gocommerce/search/config/SecurityConfig.java": "15201273a3dd1a9e07c97188ab4375114e6cade04511cd4a499cf61edec3cbaa",
+    "backend/order-service/src/main/java/com/gocommerce/orders/metrics/CheckoutBacklogMetrics.java": "75ef2d30193ce9b3b8aaeefdadcb88d263518c771a02ee080ed1f64c9bf93df2",
+    "backend/search-service/src/main/java/com/gocommerce/search/metrics/SearchIndexHealthMetrics.java": "340d9d85bf43ca46df1ad89e1fc3e4ff8a796a85d5eb9d6023e52a805161cd39",
+    "backend/analytics-service/src/main/java/com/gocommerce/analytics/consumer/OrderConsumerConfig.java": "73ba10ab07cb929f55839394ad8e49f38e8e20de6826f7953474b8b7b30c86ad",
+    "frontend/src/auth/session.js": "fc661288e15784d8243ea222411ca64ec63bd9c3d65f0d6df22cd4d9c069a78a",
+    "docker/postgres/init-databases.sh": "4af7f90634ddef2188c7203863504537d073b9faa08558389687fdf6374cbcd4",
+    "ops/prometheus/rules/gocommerce.rules.yml": "3848a784231760ec017df5ef999bd2773dae69ff8a16e5f07fc9d1fee8bdf34c",
+    "ops/backup/pg-backup.sh": "bac6157a91255ad1c11de4138611fc753c6010500d08e61e0f81e90931890fbf",
+    "ops/backup/pg-restore-drill.sh": "02ec186c8a510d98711e8a5298c49c65f4bd5787cd72af59e54d921bff0013ca",
+    "ops/testing/verify-all.sh": "90b4b5fd2d6fe65a69ec377ed4af6e6e0eba39d5554caf87710e586d011b549f",
+    ".github/workflows/ci.yml": "95b98769c7d06f544b4aed76484c7525a537543b3211cc1b4189244ebc850f7f",
+    "k8s/networkpolicies.yaml": "d213bd61380c22ee2b7caed77629627925739dca476845146a7667bcfac2628c"
+  },
+  "limitations": [
+    "Nothing was deployed. The running local cluster was not modified.",
+    "Applying the per-service database roles to an existing database requires ops/migrations/2026-09-09-per-service-database-roles.sql first, or pods will fail to authenticate.",
+    "NetworkPolicy objects are only enforced by a CNI that supports them; enforcement was not verified.",
+    "Alertmanager receivers point nowhere on purpose: no one is actually paged until they are wired.",
+    "The alert thresholds and SLO targets are stated intentions, not observed production behaviour.",
+    "The payment provider is still a mock; no provider-side reconciliation exists.",
+    "Reindex still deletes and recreates the live index; durable aliased indexing remains outstanding.",
+    "No graded search evaluation run exists; queries.v1.json is AI-authored and unjudged.",
+    "Load tests still replay a fixed query set against a warm cache.",
+    "The wider frontend has 7 pre-existing react-hooks lint errors outside the directories this work owns."
+  ]
+}

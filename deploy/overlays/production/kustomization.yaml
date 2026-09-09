@@ -1,0 +1,46 @@
+# Pins every image to the immutable tag published by .github/workflows/docker-images.yml
+# (docker/metadata-action emits a "sha-<commit>" tag). Replace newTag on each release, or
+# have the deploy pipeline set it with "kustomize edit set image".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: gocommerce
+
+resources:
+  - ../../../k8s
+
+images:
+  - name: api-gateway
+    newName: ghcr.io/OWNER/REPOSITORY/api-gateway
+    newTag: sha-REPLACE_ME
+  - name: auth-service
+    newName: ghcr.io/OWNER/REPOSITORY/auth-service
+    newTag: sha-REPLACE_ME
+  - name: catalog-service
+    newName: ghcr.io/OWNER/REPOSITORY/catalog-service
+    newTag: sha-REPLACE_ME
+  - name: cart-service
+    newName: ghcr.io/OWNER/REPOSITORY/cart-service
+    newTag: sha-REPLACE_ME
+  - name: search-service
+    newName: ghcr.io/OWNER/REPOSITORY/search-service
+    newTag: sha-REPLACE_ME
+  - name: order-service
+    newName: ghcr.io/OWNER/REPOSITORY/order-service
+    newTag: sha-REPLACE_ME
+  - name: analytics-service
+    newName: ghcr.io/OWNER/REPOSITORY/analytics-service
+    newTag: sha-REPLACE_ME
+  - name: recommendation-service
+    newName: ghcr.io/OWNER/REPOSITORY/recommendation-service
+    newTag: sha-REPLACE_ME
+  - name: embedding-service
+    newName: ghcr.io/OWNER/REPOSITORY/embedding-service
+    newTag: sha-REPLACE_ME
+
+patches:
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent

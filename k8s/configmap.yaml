@@ -20,9 +20,17 @@ data:
   EMBEDDING_DIMENSIONS: "384"
   CATALOG_SERVICE_URL: "http://catalog-service:8082"
   CATALOG_BASE_URL: "http://catalog-service:8082"
-  SPRING_DATASOURCE_USERNAME: "ecom_user"
+  # No shared database user: each Deployment sets its own least-privilege role.
   AUTH_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/ecom_auth"
   CATALOG_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/ecom_catalog"
   ORDER_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/ecom_order"
   ANALYTICS_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/ecom_analytics"
   RECOMMENDATION_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/ecom_recommendation"
+  # Interactive API documentation is a development aid, not something to serve publicly.
+  SPRINGDOC_SWAGGER_UI_ENABLED: "false"
+  SPRINGDOC_API_DOCS_ENABLED: "false"
+  # Tracing every request is a load-test-sized bill and a load-test-sized collector.
+  # Raise it temporarily while investigating an incident.
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
+  # Actuator listens on its own port, unreachable from the public ingress.
+  MANAGEMENT_SERVER_PORT: "9090"

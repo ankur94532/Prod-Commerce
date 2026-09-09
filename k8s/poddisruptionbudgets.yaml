@@ -1,0 +1,99 @@
+# Without these, a node drain or cluster upgrade can remove every replica at once.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-gateway
+  namespace: gocommerce
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service
+  namespace: gocommerce
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: auth-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: catalog-service
+  namespace: gocommerce
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: catalog-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cart-service
+  namespace: gocommerce
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: cart-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: search-service
+  namespace: gocommerce
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: search-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: order-service
+  namespace: gocommerce
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: order-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: analytics-service
+  namespace: gocommerce
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: analytics-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: recommendation-service
+  namespace: gocommerce
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: recommendation-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: embedding-service
+  namespace: gocommerce
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: embedding-service

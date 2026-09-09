@@ -1,0 +1,27 @@
+# Base manifests. They carry a mutable ":latest" image tag, which is fine for a local
+# cluster and is NOT acceptable for a deployment you have to reason about: you cannot tell
+# what is running, and a rollback has nothing to roll back to.
+#
+# Deploy production through an overlay that pins the immutable tag CI published:
+#   kubectl apply -k deploy/overlays/production
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: gocommerce
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - serviceaccounts.yaml
+  - api-gateway.yaml
+  - auth-service.yaml
+  - catalog-service.yaml
+  - cart-service.yaml
+  - search-service.yaml
+  - order-service.yaml
+  - analytics-service.yaml
+  - recommendation-service.yaml
+  - embedding-service.yaml
+  - poddisruptionbudgets.yaml
+  - horizontalpodautoscalers.yaml
+  - networkpolicies.yaml
+  - ingress.yaml

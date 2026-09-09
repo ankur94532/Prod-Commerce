@@ -1,0 +1,118 @@
+{
+  "recorded_at_utc": "2026-09-08T19:05:25.760046+00:00",
+  "phase": "search retrieval contracts and graded-evaluation harness",
+  "evidence_class": "harness_and_contract_tests_only",
+  "relevance_evidence": "none; no graded run has been collected and queries.v1.json is unjudged",
+  "suites": [
+    {
+      "name": "Elasticsearch retrieval contracts",
+      "command": "ops/testing/search-retrieval.sh",
+      "runtime": "disposable elasticsearch:8.15.2 container, unique fixture index, no project volumes",
+      "executions": 10,
+      "skipped": 0,
+      "result": "pass",
+      "covers": [
+        "identical explicit filtering across text/vector/hybrid/hybrid_rrf",
+        "requested price sort honored in every vector-scored mode",
+        "RRF candidate union includes vector-only and lexical-only candidates with bounded totals",
+        "RRF fuses a duplicate candidate once and paginates one stable union",
+        "genuine zero hits stay 200 with retrieval metadata"
+      ],
+      "caveat": "hand-constructed deterministic vectors; contract evidence, not semantic relevance"
+    },
+    {
+      "name": "search-service unit and API",
+      "command": "mvn -f backend/pom.xml -pl search-service test",
+      "classes": [
+        {
+          "class": "SearchCacheRedisTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "SearchRetrievalElasticsearchTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 5
+        },
+        {
+          "class": "SearchServiceReindexTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "SearchServiceTest",
+          "tests": 14,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "SearchControllerReindexTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "class": "SearchControllerTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "result": "pass",
+      "note": "SearchRetrievalElasticsearchTest skips without SEARCH_TEST_ES_ADDRESS; it is run by the script above"
+    },
+    {
+      "name": "graded-evaluation harness",
+      "command": "ops/testing/search-evaluation.sh",
+      "executions": 104,
+      "skipped": 0,
+      "result": "pass",
+      "covers": [
+        "hand-computed DCG/IDCG, fixed precision denominator, MRR",
+        "unknown labels refused rather than scored as zero; all-zero pools report null NDCG",
+        "query schema, provenance, dev/test family split integrity, filter validation",
+        "catalog numeric hardening and stale-snapshot cross-checks",
+        "response contract, retrieval-metadata and algorithm-downgrade detection",
+        "judgment loading: blank/out-of-range grades, provenance, duplicates, pool scope",
+        "frozen-file and request-parameter tamper detection",
+        "blinded pool export with retrieval-derived fields stripped",
+        "full CLI snapshot -> collect -> pool -> judge -> evaluate/agreement against a stub server",
+        "seeded bootstrap determinism and degenerate-kappa nulls"
+      ],
+      "caveat": "all labels are synthetic_fixture; the metric values produced are meaningless as relevance"
+    }
+  ],
+  "source_fingerprint": {
+    "backend/search-service/src/main/java/com/gocommerce/search/service/SearchService.java": "a53f600e7b39668aec4b1f56c305496186f01e87ed3a79a7dc649753902293da",
+    "backend/search-service/src/main/java/com/gocommerce/search/dto/SearchDtos.java": "c8edc0da585a5b8dfcdd56621ae3c42f7836bcbc20024bba5b7a73782d4b7efe",
+    "backend/search-service/src/main/java/com/gocommerce/search/config/SearchProperties.java": "87164920012e1abbb8242170be039ebe60eb3a125afbf2e0c6691f74cce42f9d",
+    "backend/search-service/src/test/java/com/gocommerce/search/service/SearchRetrievalElasticsearchTest.java": "32f55055b5ac441f368550b8280ce4c30cf1ae3e8538597cbb39f3c540b94436",
+    "backend/search-service/src/test/java/com/gocommerce/search/service/SearchServiceTest.java": "8e3842b071dd3cf35da48fd0d7106d69ed53b82c4483526872cab3a8bc4c6d0c",
+    "backend/search-service/src/test/java/com/gocommerce/search/web/SearchControllerTest.java": "85fe9a4bb9085b22b93019de17b41e8d50ffd498cb4adba66b876b1e3bc7978f",
+    "backend/search-service/evaluation/graded_eval.py": "0fd230dd4710238d8d89c128fabb9aa532f0243183c510b21f2cde338b05ad56",
+    "backend/search-service/evaluation/queries.v1.json": "3724f8c18b215b1c7c50875f2fb8cb8b2e47916431205b099b48e9fcd83cf1a7",
+    "backend/search-service/evaluation/RUBRIC.md": "4ed04090f7a01c6b1ee5a01ef171742cbcea4f28c9c9291d725e8701e93a9d73",
+    "backend/search-service/evaluation/README.md": "e87509006e7e0c47ca34ea8113421b3515f5ac7a52057f662b348b476738cea5",
+    "backend/search-service/evaluation/tests/support.py": "c6f419d17f5f1dbf848d55dc23e99dfe1942caeb859175f79fab49e222687652",
+    "backend/search-service/evaluation/tests/test_graded_eval.py": "34f0cf2a338488bd7c30f401e7475e01cc12d16459c52385c6b455ec7942743c",
+    "backend/search-service/evaluation/tests/test_cli_end_to_end.py": "c8298188facfe35eac7960e0131088c2c6fe1edbdcee35c687bce38e2565fe8e",
+    "ops/testing/search-retrieval.sh": "5d8190725d747681ae184b108152219ff8143e7237ee1ff48a729365272322a9",
+    "ops/testing/search-evaluation.sh": "480a1dd94edbbba4d995d6ffb42d27f4f8896a95635836af85746b621c8a1361"
+  },
+  "limitations": [
+    "queries.v1.json is AI-authored and unjudged; no NDCG/recall for any mode has been measured",
+    "vector retrieval is exact script scoring, not ANN; RRF totals are candidate-union size",
+    "inferred category filters remain active in all modes and can constrain semantic recall",
+    "reindex still deletes and recreates the active index; durable/atomic indexing is later work",
+    "existing scripts/relevance-results.json remains synthetic catalog-derived regression data"
+  ]
+}

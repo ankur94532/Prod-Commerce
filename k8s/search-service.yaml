@@ -12,7 +12,27 @@ spec:
     metadata:
       labels:
         app: search-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: /actuator/prometheus
     spec:
+      serviceAccountName: search-service
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: search-service
       containers:
         - name: search-service
           image: search-service:latest
@@ -20,12 +40,16 @@ spec:
           ports:
             - name: http
               containerPort: 8084
+            - name: management
+              containerPort: 9090
           envFrom:
             - configMapRef:
                 name: gocommerce-config
             - secretRef:
                 name: gocommerce-secrets
           env:
+            - name: MANAGEMENT_SERVER_PORT
+              value: "9090"
             - name: SERVER_PORT
               value: "8084"
             - name: SPRING_DATA_REDIS_DATABASE
@@ -37,10 +61,19 @@ spec:
             limits:
               cpu: "500m"
               memory: "768Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: http
+              port: management
             initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 3
@@ -48,11 +81,14 @@ spec:
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: http
+              port: management
             initialDelaySeconds: 45
             periodSeconds: 20
             timeoutSeconds: 3
             failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

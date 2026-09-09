@@ -1,0 +1,199 @@
+# Prometheus was scraping nine services and nobody was ever paged: there were no rule
+# files and no Alertmanager. These are the conditions that mean a customer is affected or
+# money is stuck, not a list of every metric that exists.
+#
+# Every alert names a runbook. An alert without a runbook is a notification.
+groups:
+  - name: gocommerce.slo
+    interval: 30s
+    rules:
+      # Availability and latency of the shopper-facing path, measured at the gateway.
+      - record: job:gateway_requests:rate5m
+        expr: sum(rate(http_server_requests_seconds_count{service="api-gateway"}[5m]))
+
+      - record: job:gateway_errors:rate5m
+        expr: sum(rate(http_server_requests_seconds_count{service="api-gateway",status=~"5.."}[5m]))
+
+      - record: job:gateway_availability:ratio5m
+        expr: >
+          1 - (job:gateway_errors:rate5m / clamp_min(job:gateway_requests:rate5m, 1e-9))
+
+      - alert: GatewayErrorBudgetBurningFast
+        # 14.4x burn against a 99.9% target exhausts a 30-day budget in about two days.
+        # Paired with a 5m window so the alert clears quickly once the incident ends.
+        expr: >
+          (
+            (sum(rate(http_server_requests_seconds_count{service="api-gateway",status=~"5.."}[1h]))
+              / clamp_min(sum(rate(http_server_requests_seconds_count{service="api-gateway"}[1h])), 1e-9)) > (14.4 * 0.001)
+            and
+            (job:gateway_errors:rate5m / clamp_min(job:gateway_requests:rate5m, 1e-9)) > (14.4 * 0.001)
+          )
+        for: 5m
+        labels:
+          severity: page
+          slo: gateway-availability
+        annotations:
+          summary: "Gateway 5xx rate is burning the availability budget 14x faster than sustainable"
+          runbook: docs/runbooks/gateway-errors.md
+
+      # Multi-window burn rate. The fast window catches an outage in minutes; the slow one
+      # catches a persistent low-grade error rate that would quietly eat the month's budget
+      # without ever tripping the fast threshold. Each pairs a long window with a short one
+      # so a recovered incident stops paging promptly.
+      - alert: GatewayErrorBudgetBurningSlowly
+        expr: >
+          (
+            (sum(rate(http_server_requests_seconds_count{service="api-gateway",status=~"5.."}[6h]))
+              / clamp_min(sum(rate(http_server_requests_seconds_count{service="api-gateway"}[6h])), 1e-9)) > (6 * 0.001)
+            and
+            (sum(rate(http_server_requests_seconds_count{service="api-gateway",status=~"5.."}[30m]))
+              / clamp_min(sum(rate(http_server_requests_seconds_count{service="api-gateway"}[30m])), 1e-9)) > (6 * 0.001)
+          )
+        for: 15m
+        labels:
+          severity: ticket
+          slo: gateway-availability
+        annotations:
+          summary: "Gateway errors are burning the availability budget 6x faster than sustainable"
+          runbook: docs/runbooks/gateway-errors.md
+
+      # Budget consumed over the objective window, for reporting rather than paging.
+      - record: job:gateway_error_budget_consumed:ratio30d
+        expr: >
+          (sum(increase(http_server_requests_seconds_count{service="api-gateway",status=~"5.."}[30d]))
+            / clamp_min(sum(increase(http_server_requests_seconds_count{service="api-gateway"}[30d])), 1e-9)) / 0.001
+
+      - record: job:search_latency_p95:5m
+        expr: >
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_server_requests_seconds_bucket{service="search-service",uri=~"/api/v1/search.*"}[5m])))
+
+      - alert: SearchLatencyBudgetBurning
+        expr: >
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_server_requests_seconds_bucket{service="search-service",uri=~"/api/v1/search.*"}[5m]))
+          ) > 0.8
+        for: 10m
+        labels:
+          severity: ticket
+          slo: search-latency
+        annotations:
+          summary: "Search p95 above the 800ms objective for ten minutes"
+          runbook: docs/runbooks/search-latency.md
+
+  - name: gocommerce.checkout
+    interval: 30s
+    rules:
+      - alert: CheckoutRecoveryBacklogGrowing
+        # Orders stuck in PENDING_PAYMENT or COMPENSATING are orders where a shopper may
+        # have been charged and has no confirmation, or stock is reserved and unsellable.
+        expr: order_recovery_backlog > 10
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $value }} orders are waiting on checkout recovery"
+          runbook: docs/runbooks/checkout-recovery.md
+
+      - alert: CheckoutRecoveryStuck
+        # Recovery retries with backoff; anything older than fifteen minutes is not retrying
+        # successfully and needs a human.
+        expr: order_recovery_oldest_seconds > 900
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "An order has been awaiting recovery for {{ $value | humanizeDuration }}"
+          runbook: docs/runbooks/checkout-recovery.md
+
+      - alert: OutboxNotDraining
+        # The outbox commits with the order, so a growing backlog means analytics and
+        # recommendations are diverging from what customers actually bought.
+        expr: order_outbox_oldest_seconds > 300
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Oldest unpublished outbox event is {{ $value | humanizeDuration }} old"
+          runbook: docs/runbooks/outbox-lag.md
+
+      - alert: OutboxBacklogLarge
+        expr: order_outbox_pending > 1000
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $value }} outbox events are unpublished"
+          runbook: docs/runbooks/outbox-lag.md
+
+      - alert: OrderDatabasePoolSaturated
+        # Checkout holds a connection across catalog calls, so pool exhaustion presents as
+        # checkout latency rather than database load.
+        expr: >
+          hikaricp_connections_active{service="order-service"}
+            / clamp_min(hikaricp_connections_max{service="order-service"}, 1) > 0.9
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Order-service connection pool above 90% utilisation"
+          runbook: docs/runbooks/checkout-recovery.md
+
+  - name: gocommerce.events
+    interval: 30s
+    rules:
+      - alert: DeadLetterTopicReceivingEvents
+        # Parked events are not processed events. This is the alert that makes the
+        # dead-letter path honest rather than a quiet drop.
+        expr: >
+          sum by (service) (increase(spring_kafka_listener_seconds_count{result="failure"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $labels.service }} is failing to project order events"
+          runbook: docs/runbooks/event-dead-letters.md
+
+      - alert: ConsumerStopped
+        expr: >
+          sum by (service) (rate(spring_kafka_listener_seconds_count[15m])) == 0
+            and on (service) (order_outbox_pending > 0)
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.service }} has consumed nothing for fifteen minutes while events are pending"
+          runbook: docs/runbooks/event-dead-letters.md
+
+  - name: gocommerce.platform
+    interval: 30s
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~".*-service|api-gateway"} == 0
+        for: 3m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.job }} has been unreachable to Prometheus for three minutes"
+          runbook: docs/runbooks/service-down.md
+
+      - alert: CircuitBreakerOpen
+        expr: resilience4j_circuitbreaker_state{state="open"} == 1
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Circuit breaker {{ $labels.name }} is open on {{ $labels.service }}"
+          runbook: docs/runbooks/service-down.md
+
+      - alert: SearchIndexEmpty
+        # An empty index answers every query with zero results and looks healthy: the
+        # service is up, fast, and useless. Reindex deletes and recreates the live index,
+        # so this is exactly what a failed reindex looks like.
+        expr: search_index_documents < 1
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "The product search index is empty"
+          runbook: docs/runbooks/search-latency.md

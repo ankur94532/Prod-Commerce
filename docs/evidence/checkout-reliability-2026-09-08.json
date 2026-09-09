@@ -1,0 +1,80 @@
+{
+  "recorded_at_utc": "2026-09-08T18:29:07.179991+00:00",
+  "command": "ops/testing/checkout-reliability.sh -q",
+  "git_head": "3710311a2abfde7d1e1ad8d84861e53ee6f367d2",
+  "source_sha256": "eb2b503a3636e2d36d67e543efbaaef024b934f83f2cd5c9b2793de6d84d2597",
+  "source_scope": "Four affected backend modules src/**/*.java,sql,yml; frontend checkout helper/tests, Checkout.jsx, OrdersPage.jsx, api/orders.js; paths and bytes separated by NUL",
+  "working_tree_changes_included": true,
+  "postgres_image": "postgres:16",
+  "tests": 24,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "suites": [
+    {
+      "module": "catalog-service",
+      "suite": "com.gocommerce.catalog.service.InventoryServiceReliabilityPostgresTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "cases": [
+        "releaseBeforeDelayedReserveDoesNotCreateOrLoseStock",
+        "releaseFailureRollsBackLedgerAndCanBeRetried",
+        "concurrentReserveAndDuplicateReleaseChangeStockOnce",
+        "inactiveProductCannotBeReservedButCanBeReleased",
+        "failedReserveAndPayloadMismatchLeaveStockUnchanged",
+        "simultaneousDistinctReservationsCannotOversell"
+      ]
+    },
+    {
+      "module": "order-service",
+      "suite": "com.gocommerce.orders.service.CheckoutReliabilityPostgresTest",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "cases": [
+        "lostReserveResponseReleasesEveryPlannedLine",
+        "recoverySkipsAnActivelyLockedCheckout",
+        "databaseFailureAfterRemoteEffectsLeavesRecoverableIntentAndNoEvent",
+        "legacyUnpaidOrdersAreNotReleasedUsingUnknownReservationIds",
+        "legacyPaidReplayUsesOriginalFingerprintAndLookupIsUserScoped",
+        "changedPayloadConflictsAndKeysAreScopedToUser",
+        "concurrentRecoveryWorkersDoNotProcessTheSameOrder",
+        "releaseOutagePersistsRecoveryAndRetryCompletesCancellation",
+        "abandonedCommittedIntentIsRecoveredWithoutOriginalRequestOrPayment",
+        "laterLineFailureReleasesEarlierReservationWithoutCharging",
+        "concurrentDuplicateRequestsCreateOneOrderAndOneEvent"
+      ]
+    },
+    {
+      "module": "analytics-service",
+      "suite": "com.gocommerce.analytics.service.OrderEventProjectorReliabilityPostgresTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "cases": [
+        "concurrentRedeliveryAndDifferentOrdersAreCountedExactlyOnce",
+        "aggregateFailureRollsBackInboxThenRedeliverySucceeds",
+        "malformedEventsAreNotAcknowledgedAsProcessed"
+      ]
+    },
+    {
+      "module": "recommendation-service",
+      "suite": "com.gocommerce.recommendation.service.OrderEventProjectorReliabilityPostgresTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "cases": [
+        "concurrentRedeliveryAndDifferentOrdersAreCountedExactlyOnce",
+        "laterLineFailureRollsBackEarlierAggregateUpdate",
+        "aggregateFailureRollsBackInboxThenRedeliverySucceeds",
+        "malformedEventsAreNotAcknowledgedAsProcessed"
+      ]
+    }
+  ],
+  "limits": "Real PostgreSQL migrations, transactions and locks; order tests inject catalog/payment faults. No live Kafka or OS process-kill test. This is correctness evidence, not a load benchmark or production guarantee."
+}

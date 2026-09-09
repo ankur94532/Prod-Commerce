@@ -12,7 +12,27 @@ spec:
     metadata:
       labels:
         app: recommendation-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: /actuator/prometheus
     spec:
+      serviceAccountName: recommendation-service
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: recommendation-service
       containers:
         - name: recommendation-service
           image: recommendation-service:latest
@@ -20,12 +40,24 @@ spec:
           ports:
             - name: http
               containerPort: 8087
+            - name: management
+              containerPort: 9090
           envFrom:
             - configMapRef:
                 name: gocommerce-config
             - secretRef:
                 name: gocommerce-secrets
           env:
+            # A least-privilege role scoped to this service's database only.
+            - name: SPRING_DATASOURCE_USERNAME
+              value: recommendation_service
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-secrets
+                  key: RECOMMENDATION_DB_PASSWORD
+            - name: MANAGEMENT_SERVER_PORT
+              value: "9090"
             - name: SERVER_PORT
               value: "8087"
             - name: SPRING_DATASOURCE_URL
@@ -42,10 +74,19 @@ spec:
             limits:
               cpu: "500m"
               memory: "768Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: http
+              port: management
             initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 3
@@ -53,11 +94,14 @@ spec:
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: http
+              port: management
             initialDelaySeconds: 45
             periodSeconds: 20
             timeoutSeconds: 3
             failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
