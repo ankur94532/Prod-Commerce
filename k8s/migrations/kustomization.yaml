@@ -1,0 +1,9 @@
+# Applied before the services, as its own step. Keeping migrations out of the main
+# kustomization is the point: applying them together would put the schema change back in
+# the middle of a rolling deploy.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: gocommerce
+
+resources:
+  - jobs.yaml

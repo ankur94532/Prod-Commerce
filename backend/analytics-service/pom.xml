@@ -22,6 +22,10 @@
   <dependencies>
     <dependency>
       <groupId>com.gocommerce</groupId>
+      <artifactId>platform-database</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.gocommerce</groupId>
       <artifactId>platform-security</artifactId>
     </dependency>
 

@@ -38,7 +38,12 @@ backend_tests() { mvn -f backend/pom.xml test -q; }
 frontend_tests() { (cd frontend && node --test "src/**/*.test.js"); }
 frontend_lint() { (cd frontend && npm run lint); }
 frontend_build() { (cd frontend && npm run build); }
-kubernetes_manifests() { kubectl apply --dry-run=client -k k8s && kubectl apply --dry-run=client -k deploy/overlays/production; }
+kubernetes_manifests() {
+  kubectl apply --dry-run=client -k k8s &&
+    kubectl apply --dry-run=client -k k8s/migrations &&
+    kubectl apply --dry-run=client -k deploy/overlays/production &&
+    kubectl apply --dry-run=client -k deploy/overlays/production-migrations
+}
 compose_config() { set -a; . ./.env.example; set +a; docker compose config; }
 prometheus_rules() {
   docker run --rm -v "$repo_root/ops/prometheus:/etc/prometheus:ro" \
@@ -53,6 +58,7 @@ run "Backend unit and API tests"        backend_tests
 run "Checkout reliability (PostgreSQL)" ops/testing/checkout-reliability.sh
 run "Database role isolation"           ops/testing/database-isolation.sh
 run "Database role migration"           ops/testing/database-role-migration.sh
+run "Schema migration job"              ops/testing/migration-job.sh
 run "Search retrieval (Elasticsearch)"  ops/testing/search-retrieval.sh
 run "Graded evaluation harness"         ops/testing/search-evaluation.sh
 run "Load-test harness"                 ops/testing/load-harness.sh

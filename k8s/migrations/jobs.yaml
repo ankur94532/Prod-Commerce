@@ -1,0 +1,369 @@
+# Schema migrations run here, once, before the services roll.
+#
+# They used to run inside every service's startup, which meant N replicas racing for the
+# migration lock on every rolling deploy, a slow migration failing readiness across the
+# fleet, and no separation between "deploy the code" and "change the schema".
+#
+# Apply these and wait for completion BEFORE applying the Deployments:
+#   kubectl apply -k k8s/migrations
+#   kubectl -n gocommerce wait --for=condition=complete job -l app.kubernetes.io/component=migration --timeout=10m
+#   kubectl apply -k k8s
+#
+# Each job carries the image tag of the release being deployed, so the overlay rewrites it
+# alongside the Deployments. Migrations must be backward compatible with the currently
+# running version: expand first, contract in a later release, never both at once.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: auth-service-migrate
+  namespace: gocommerce
+  labels:
+    app.kubernetes.io/component: migration
+    app: auth-service
+spec:
+  backoffLimit: 2
+  # Keep finished jobs briefly so a failed migration can be read before it disappears.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: auth-service-migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: auth-service
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: auth-service:latest
+          imagePullPolicy: IfNotPresent
+          args: ["--spring.profiles.active=migrate"]
+          envFrom:
+            - configMapRef:
+                name: gocommerce-config
+            - secretRef:
+                name: gocommerce-secrets
+          env:
+            - name: SPRING_FLYWAY_ENABLED
+              value: "true"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: auth_service
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-secrets
+                  key: AUTH_DB_PASSWORD
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: gocommerce-config
+                  key: AUTH_DATASOURCE_URL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: catalog-service-migrate
+  namespace: gocommerce
+  labels:
+    app.kubernetes.io/component: migration
+    app: catalog-service
+spec:
+  backoffLimit: 2
+  # Keep finished jobs briefly so a failed migration can be read before it disappears.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: catalog-service-migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: catalog-service
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: catalog-service:latest
+          imagePullPolicy: IfNotPresent
+          args: ["--spring.profiles.active=migrate"]
+          envFrom:
+            - configMapRef:
+                name: gocommerce-config
+            - secretRef:
+                name: gocommerce-secrets
+          env:
+            - name: SPRING_FLYWAY_ENABLED
+              value: "true"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: catalog_service
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-secrets
+                  key: CATALOG_DB_PASSWORD
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: gocommerce-config
+                  key: CATALOG_DATASOURCE_URL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: order-service-migrate
+  namespace: gocommerce
+  labels:
+    app.kubernetes.io/component: migration
+    app: order-service
+spec:
+  backoffLimit: 2
+  # Keep finished jobs briefly so a failed migration can be read before it disappears.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: order-service-migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: order-service
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: order-service:latest
+          imagePullPolicy: IfNotPresent
+          args: ["--spring.profiles.active=migrate"]
+          envFrom:
+            - configMapRef:
+                name: gocommerce-config
+            - secretRef:
+                name: gocommerce-secrets
+          env:
+            - name: SPRING_FLYWAY_ENABLED
+              value: "true"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: order_service
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-secrets
+                  key: ORDER_DB_PASSWORD
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: gocommerce-config
+                  key: ORDER_DATASOURCE_URL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: analytics-service-migrate
+  namespace: gocommerce
+  labels:
+    app.kubernetes.io/component: migration
+    app: analytics-service
+spec:
+  backoffLimit: 2
+  # Keep finished jobs briefly so a failed migration can be read before it disappears.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: analytics-service-migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: analytics-service
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: analytics-service:latest
+          imagePullPolicy: IfNotPresent
+          args: ["--spring.profiles.active=migrate"]
+          envFrom:
+            - configMapRef:
+                name: gocommerce-config
+            - secretRef:
+                name: gocommerce-secrets
+          env:
+            - name: SPRING_FLYWAY_ENABLED
+              value: "true"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: analytics_service
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-secrets
+                  key: ANALYTICS_DB_PASSWORD
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: gocommerce-config
+                  key: ANALYTICS_DATASOURCE_URL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: recommendation-service-migrate
+  namespace: gocommerce
+  labels:
+    app.kubernetes.io/component: migration
+    app: recommendation-service
+spec:
+  backoffLimit: 2
+  # Keep finished jobs briefly so a failed migration can be read before it disappears.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: recommendation-service-migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: recommendation-service
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: recommendation-service:latest
+          imagePullPolicy: IfNotPresent
+          args: ["--spring.profiles.active=migrate"]
+          envFrom:
+            - configMapRef:
+                name: gocommerce-config
+            - secretRef:
+                name: gocommerce-secrets
+          env:
+            - name: SPRING_FLYWAY_ENABLED
+              value: "true"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: recommendation_service
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-secrets
+                  key: RECOMMENDATION_DB_PASSWORD
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: gocommerce-config
+                  key: RECOMMENDATION_DATASOURCE_URL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

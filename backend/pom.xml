@@ -29,6 +29,7 @@
 
     <modules>
         <module>platform-security</module>
+        <module>platform-database</module>
         <module>auth-service</module>
         <module>catalog-service</module>
         <module>cart-service</module>
@@ -58,6 +59,11 @@
             <dependency>
                 <groupId>com.gocommerce</groupId>
                 <artifactId>platform-security</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.gocommerce</groupId>
+                <artifactId>platform-database</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

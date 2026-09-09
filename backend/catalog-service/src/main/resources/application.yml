@@ -12,7 +12,7 @@ spring:
     driver-class-name: org.postgresql.Driver
 
   flyway:
-    enabled: true
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
     locations: classpath:db/migration
     baseline-on-migrate: true
 
@@ -87,3 +87,20 @@ resilience4j:
           - java.net.SocketTimeoutException
           - org.springframework.web.client.ResourceAccessException
           - org.springframework.web.client.HttpServerErrorException
+
+---
+# Run as a job before a rollout, not inside every starting pod:
+#   SPRING_PROFILES_ACTIVE=migrate SPRING_FLYWAY_ENABLED=true <image>
+# The service itself starts with Flyway disabled in deployed environments, and
+# hibernate ddl-auto=validate stops it if the schema is behind its entities.
+spring:
+  config:
+    activate:
+      on-profile: migrate
+  main:
+    web-application-type: none
+  flyway:
+    enabled: true
+  kafka:
+    listener:
+      auto-startup: false

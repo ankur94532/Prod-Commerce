@@ -1,0 +1,43 @@
+# The migration step of a production release. Run this first and wait for it, then apply
+# deploy/overlays/production. Both pin the same image tag, so the migrations that run are
+# the ones that ship with the code being deployed.
+#
+#   kubectl apply -k deploy/overlays/production-migrations
+#   kubectl -n gocommerce wait --for=condition=complete job \
+#       -l app.kubernetes.io/component=migration --timeout=10m
+#   kubectl apply -k deploy/overlays/production
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: gocommerce
+
+resources:
+  - ../../../k8s/migrations
+
+images:
+  - name: api-gateway
+    newName: ghcr.io/OWNER/REPOSITORY/api-gateway
+    newTag: sha-REPLACE_ME
+  - name: auth-service
+    newName: ghcr.io/OWNER/REPOSITORY/auth-service
+    newTag: sha-REPLACE_ME
+  - name: catalog-service
+    newName: ghcr.io/OWNER/REPOSITORY/catalog-service
+    newTag: sha-REPLACE_ME
+  - name: cart-service
+    newName: ghcr.io/OWNER/REPOSITORY/cart-service
+    newTag: sha-REPLACE_ME
+  - name: search-service
+    newName: ghcr.io/OWNER/REPOSITORY/search-service
+    newTag: sha-REPLACE_ME
+  - name: order-service
+    newName: ghcr.io/OWNER/REPOSITORY/order-service
+    newTag: sha-REPLACE_ME
+  - name: analytics-service
+    newName: ghcr.io/OWNER/REPOSITORY/analytics-service
+    newTag: sha-REPLACE_ME
+  - name: recommendation-service
+    newName: ghcr.io/OWNER/REPOSITORY/recommendation-service
+    newTag: sha-REPLACE_ME
+  - name: embedding-service
+    newName: ghcr.io/OWNER/REPOSITORY/embedding-service
+    newTag: sha-REPLACE_ME
