@@ -18,6 +18,7 @@
     <description>Recommendation service for GoCommerce</description>
 
     <properties>
+        <jacoco.line.minimum>0.52</jacoco.line.minimum>
         <java.version>21</java.version>
     </properties>
 

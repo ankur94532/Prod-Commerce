@@ -25,6 +25,15 @@
         <springdoc.version>2.6.0</springdoc.version>
         <testcontainers.version>1.20.4</testcontainers.version>
         <jjwt.version>0.11.5</jjwt.version>
+        <!--
+          A coverage floor is a ratchet, not an aspiration. It sat at 0.35 while real line
+          coverage ranged from 55% to 100%, so any module could have lost half its tests
+          without the build noticing. Each module overrides this with a value a few points
+          below what it actually achieves: enough headroom for ordinary churn, tight enough
+          that deleting tests fails the build. Raise a module's floor when its coverage
+          rises; never lower one to make a build pass.
+        -->
+        <jacoco.line.minimum>0.35</jacoco.line.minimum>
     </properties>
 
     <modules>
@@ -123,7 +132,7 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.35</minimum>
+                                            <minimum>${jacoco.line.minimum}</minimum>
                                         </limit>
                                     </limits>
                                 </rule>

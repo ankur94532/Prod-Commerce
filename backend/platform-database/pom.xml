@@ -13,6 +13,10 @@
     <artifactId>platform-database</artifactId>
     <name>platform-database</name>
     <description>Shared schema migration lifecycle.</description>
+    <properties>
+        <jacoco.line.minimum>0.97</jacoco.line.minimum>
+    </properties>
+
 
     <dependencies>
         <dependency>

@@ -13,6 +13,10 @@
     <artifactId>platform-security</artifactId>
     <name>platform-security</name>
     <description>Shared token verification and service-to-service authentication.</description>
+    <properties>
+        <jacoco.line.minimum>0.85</jacoco.line.minimum>
+    </properties>
+
 
     <dependencies>
         <!-- Compile-scoped: every consumer needs the verifier itself. -->

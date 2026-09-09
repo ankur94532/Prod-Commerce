@@ -14,6 +14,10 @@
     <artifactId>search-service</artifactId>
     <name>search-service</name>
     <description>Search service for GoCommerce</description>
+    <properties>
+        <jacoco.line.minimum>0.69</jacoco.line.minimum>
+    </properties>
+
 
     <dependencies>
         <dependency>

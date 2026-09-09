@@ -14,6 +14,10 @@
     <artifactId>catalog-service</artifactId>
     <name>catalog-service</name>
     <description>Product catalog service for GoCommerce</description>
+    <properties>
+        <jacoco.line.minimum>0.77</jacoco.line.minimum>
+    </properties>
+
 
     <dependencies>
         <dependency>

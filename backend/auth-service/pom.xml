@@ -16,6 +16,10 @@
     <artifactId>auth-service</artifactId>
     <name>auth-service</name>
     <description>Auth service for GoCommerce</description>
+    <properties>
+        <jacoco.line.minimum>0.73</jacoco.line.minimum>
+    </properties>
+
 
     <dependencies>
         <dependency>
