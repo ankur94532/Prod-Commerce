@@ -42,6 +42,43 @@ jobs:
       - name: Run checkout reliability suite
         run: ops/testing/checkout-reliability.sh
 
+  database-and-recovery:
+    # These suites existed but nothing ran them automatically, which is the same failure
+    # that let the checkout and Elasticsearch tests silently skip before: a check nobody
+    # has to pass decays into a check that no longer passes.
+    name: Database isolation, migrations, and recovery drills
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Per-service database role isolation
+        run: ops/testing/database-isolation.sh
+      - name: Role migration for an existing database
+        run: ops/testing/database-role-migration.sh
+      - name: Schema migration job
+        run: ops/testing/migration-job.sh
+      - name: Point-in-time recovery drill
+        run: ops/backup/pitr-drill.sh
+      - name: Backup retention policy
+        run: ops/testing/backup-retention.sh
+
+  load-harness:
+    # Verifies the load harness itself against a stub: regimes, determinism, and that a
+    # request which never completes is counted as a failure.
+    name: Load-test harness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run load harness checks
+        run: ops/testing/load-harness.sh
+
   search-retrieval:
     # Retrieval contracts against a real Elasticsearch: filter parity across modes, sort
     # handling, RRF fusion and pagination.

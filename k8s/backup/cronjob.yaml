@@ -5,6 +5,10 @@
 #  - The volume below lives in the same cluster as the database. That protects against
 #    "someone dropped a table", not against losing the cluster or the storage backend. A
 #    real deployment writes to object storage in another failure domain.
+#  - The CronJob mounts gocommerce-backup-scripts, which is NOT in this file: generate it
+#    from the tested scripts so the two cannot drift, then apply this manifest:
+#      ops/backup/render-scripts-configmap.sh | kubectl apply -f -
+#      kubectl apply -f k8s/backup/cronjob.yaml
 #  - Restores are still not automatic. ops/backup/pg-restore-drill.sh and pitr-drill.sh
 #    have to be run deliberately, and a backup nobody has restored is only a hope.
 ---
@@ -31,17 +35,6 @@ spec:
   resources:
     requests:
       storage: 20Gi
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: gocommerce-backup-scripts
-  namespace: gocommerce
-data:
-  # Kept here so the job runs the same scripts that ops/testing/backup-retention.sh checks.
-  # Generate with: kubectl create configmap gocommerce-backup-scripts \
-  #   --from-file=ops/backup/pg-backup.sh --from-file=ops/backup/prune-archive.sh --dry-run=client -o yaml
-  placeholder: "replace this ConfigMap with the generated one before applying"
 ---
 apiVersion: batch/v1
 kind: CronJob
