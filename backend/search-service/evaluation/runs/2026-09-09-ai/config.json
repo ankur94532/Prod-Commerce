@@ -1,0 +1,7 @@
+{
+  "index_identity": "disposable elasticsearch:8.15.2, single node, index rebuilt for this run",
+  "embedding_model": "hashing-stub (deterministic bag-of-words, not a trained model)",
+  "embedding_revision": "ops/evaluation/collect-run.sh embedded stub",
+  "cache_regime": "redis started empty for this run; each query issued once per mode",
+  "corpus_provenance": "generated seed catalog of 600 products, not a real assortment"
+}

@@ -24,11 +24,11 @@ MODE_INDEX = {mode: index for index, mode in enumerate(graded_eval.MODES)}
 RETRIEVAL = {
     'text': {'mode': 'text', 'algorithm': 'lexical_with_rules', 'totalRelation': 'exact',
              'candidateWindow': 0, 'rrfRankConstant': 0, 'keywordWeight': 1.0, 'vectorWeight': 0.0},
-    'vector': {'mode': 'vector', 'algorithm': 'exact_cosine', 'totalRelation': 'exact',
+    'vector': {'mode': 'vector', 'algorithm': 'hnsw_cosine', 'totalRelation': 'ann_candidates',
                'candidateWindow': 0, 'rrfRankConstant': 0, 'keywordWeight': 0.0, 'vectorWeight': 1.0},
     'hybrid': {'mode': 'hybrid', 'algorithm': 'lexically_gated_weighted_cosine', 'totalRelation': 'exact',
                'candidateWindow': 0, 'rrfRankConstant': 0, 'keywordWeight': 1.0, 'vectorWeight': 1.5},
-    'hybrid_rrf': {'mode': 'hybrid_rrf', 'algorithm': 'rrf_union_exact_vector', 'totalRelation': 'candidate_union',
+    'hybrid_rrf': {'mode': 'hybrid_rrf', 'algorithm': 'rrf_union_hnsw_vector', 'totalRelation': 'candidate_union',
                    'candidateWindow': 100, 'rrfRankConstant': 60, 'keywordWeight': 1.0, 'vectorWeight': 1.5},
 }
 

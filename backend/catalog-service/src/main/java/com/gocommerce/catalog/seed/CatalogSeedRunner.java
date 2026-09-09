@@ -2,6 +2,7 @@ package com.gocommerce.catalog.seed;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -18,6 +19,9 @@ public class CatalogSeedRunner implements ApplicationRunner {
     private final int size;
     private final Runnable shutdown;
 
+    // Two constructors and no @Autowired leaves Spring looking for a no-arg one, which does
+    // not exist: the seed job failed to start at all. The second constructor exists for tests.
+    @Autowired
     public CatalogSeedRunner(CatalogSeeder seeder, @Value("${catalog.seed.size:1000}") int size,
                              ConfigurableApplicationContext context) {
         this(seeder, size, () -> System.exit(SpringApplication.exit(context, () -> 0)));

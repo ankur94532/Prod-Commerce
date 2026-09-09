@@ -1,0 +1,321 @@
+{
+  "schema_version": 1,
+  "dataset_id": "shopper-intents-v1",
+  "provenance": {
+    "author_type": "ai",
+    "author": "Codex",
+    "source": "Manually authored task descriptions, not sampled from catalog names/descriptions or existing generated queries. Author saw the system taxonomy and search code.",
+    "catalog_independent": true,
+    "judgment_status": "unjudged",
+    "limitations": [
+      "Not shopper logs or human-authored queries.",
+      "Small exploratory challenge set; not representative traffic.",
+      "Test split is frozen for local ablations, not proof against broader model training contamination."
+    ]
+  },
+  "queries": [
+    {
+      "query_id": "s01",
+      "family_id": "s01",
+      "kind": "semantic_intent",
+      "split": "dev",
+      "query": "something to keep office chatter out while I work",
+      "intent": "Over-ear or in-ear audio with explicit noise isolation/cancellation evidence. Generic speakers are unsuitable.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "s02",
+      "family_id": "s02",
+      "kind": "semantic_intent",
+      "split": "test",
+      "query": "carry a computer safely through the rain",
+      "intent": "A carrying bag with a padded computer compartment and explicit water resistance. A computer itself does not meet the task.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "s03",
+      "family_id": "s03",
+      "kind": "semantic_intent",
+      "split": "test",
+      "query": "less strain on my feet during a full shift standing",
+      "intent": "Footwear with documented cushioning/support for extended wear. Fashion category membership alone is weak evidence.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "s04",
+      "family_id": "s04",
+      "kind": "semantic_intent",
+      "split": "dev",
+      "query": "keep lunch warm until my afternoon break",
+      "intent": "An insulated food container suitable for a meal. An uninsulated box only partly addresses the need.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "t01",
+      "family_id": "t01",
+      "kind": "typo",
+      "split": "dev",
+      "query": "wirless earbds",
+      "intent": "Wireless earbuds. Judge the intended corrected request, not the spelling.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "t02",
+      "family_id": "t02",
+      "kind": "typo",
+      "split": "test",
+      "query": "lapotp bakpack",
+      "intent": "A backpack designed to carry a laptop. Neither a laptop nor a generic handbag is an exact match.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "t03",
+      "family_id": "t03",
+      "kind": "typo",
+      "split": "test",
+      "query": "rechargable trimer",
+      "intent": "A rechargeable grooming trimmer. Disposable razors and replacement-only blades are unsuitable.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "t04",
+      "family_id": "t04",
+      "kind": "typo",
+      "split": "dev",
+      "query": "stainles steel botle",
+      "intent": "A reusable stainless steel bottle. Plastic bottles do not meet the material request.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "c01",
+      "family_id": "c01",
+      "kind": "price_intent",
+      "split": "dev",
+      "query": "wireless headphones under 3000 rupees",
+      "intent": "Wireless headphones within the explicit budget; do not award full relevance based on category alone.",
+      "filters": {
+        "maxPrice": 3000
+      },
+      "sort": "relevance"
+    },
+    {
+      "query_id": "c02",
+      "family_id": "c02",
+      "kind": "price_intent",
+      "split": "test",
+      "query": "a work laptop between 30000 and 50000 rupees",
+      "intent": "A laptop suited to office work within the price range, with sufficient specification evidence.",
+      "filters": {
+        "minPrice": 30000,
+        "maxPrice": 50000
+      },
+      "sort": "relevance"
+    },
+    {
+      "query_id": "c03",
+      "family_id": "c03",
+      "kind": "price_intent",
+      "split": "test",
+      "query": "running footwear below 2500 rupees",
+      "intent": "Running footwear within the budget. Casual footwear without running-use evidence is at most partially relevant.",
+      "filters": {
+        "maxPrice": 2500
+      },
+      "sort": "relevance"
+    },
+    {
+      "query_id": "c04",
+      "family_id": "c04",
+      "kind": "price_intent",
+      "split": "dev",
+      "query": "desk lamp no more than 1500 rupees",
+      "intent": "A desk/task lamp within budget. Other desk accessories do not satisfy the request.",
+      "filters": {
+        "maxPrice": 1500
+      },
+      "sort": "relevance"
+    },
+    {
+      "query_id": "a01",
+      "family_id": "a01",
+      "kind": "stock_intent",
+      "split": "dev",
+      "query": "available yoga mat",
+      "intent": "A yoga mat currently in stock.",
+      "filters": {
+        "inStock": true
+      },
+      "sort": "relevance"
+    },
+    {
+      "query_id": "a02",
+      "family_id": "a02",
+      "kind": "stock_intent",
+      "split": "test",
+      "query": "in stock insulated lunch box",
+      "intent": "An insulated meal container currently in stock; stock and insulation both matter.",
+      "filters": {
+        "inStock": true
+      },
+      "sort": "relevance"
+    },
+    {
+      "query_id": "a03",
+      "family_id": "a03",
+      "kind": "stock_intent",
+      "split": "test",
+      "query": "available usb c cable under 800",
+      "intent": "An in-stock USB-C cable within the price cap. Adapters and chargers are not exact substitutes.",
+      "filters": {
+        "inStock": true,
+        "maxPrice": 800
+      },
+      "sort": "relevance"
+    },
+    {
+      "query_id": "a04",
+      "family_id": "a04",
+      "kind": "stock_intent",
+      "split": "dev",
+      "query": "in stock blue cotton shirt",
+      "intent": "An in-stock shirt made from cotton in blue. Evidence must support all requested attributes.",
+      "filters": {
+        "inStock": true,
+        "color": "blue",
+        "material": "cotton"
+      },
+      "sort": "relevance"
+    },
+    {
+      "query_id": "b01",
+      "family_id": "b01",
+      "kind": "ambiguous",
+      "split": "dev",
+      "query": "notebook for handwritten meeting notes",
+      "intent": "A paper notebook for writing, not a notebook computer.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "b02",
+      "family_id": "b02",
+      "kind": "ambiguous",
+      "split": "test",
+      "query": "stand for watching videos on my phone",
+      "intent": "A physical phone stand. A smartphone alone is unsuitable.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "b03",
+      "family_id": "b03",
+      "kind": "ambiguous",
+      "split": "test",
+      "query": "mouse for a small travel desk",
+      "intent": "A compact computer pointing device. Animal-themed toys are unsuitable.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "b04",
+      "family_id": "b04",
+      "kind": "ambiguous",
+      "split": "dev",
+      "query": "lightweight case for spectacles",
+      "intent": "A protective glasses case; general luggage or a phone case is unsuitable.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "m01",
+      "family_id": "m01",
+      "kind": "multi_constraint",
+      "split": "dev",
+      "query": "black running shoes with a mesh upper",
+      "intent": "Running footwear with explicit mesh material and black color.",
+      "filters": {
+        "color": "black",
+        "material": "mesh"
+      },
+      "sort": "relevance"
+    },
+    {
+      "query_id": "m02",
+      "family_id": "m02",
+      "kind": "multi_constraint",
+      "split": "test",
+      "query": "small bluetooth speaker to use outdoors",
+      "intent": "A portable wireless speaker with evidence of outdoor suitability. Headphones do not satisfy the request.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "m03",
+      "family_id": "m03",
+      "kind": "multi_constraint",
+      "split": "test",
+      "query": "backpack with room for a 15 inch laptop and a bottle",
+      "intent": "A backpack whose documented compartments accommodate the stated laptop and a bottle. Do not infer dimensions from its category.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "m04",
+      "family_id": "m04",
+      "kind": "multi_constraint",
+      "split": "dev",
+      "query": "fragrance free sunscreen for daily use",
+      "intent": "Sunscreen explicitly documented as fragrance-free. Other skincare products are not substitutes.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "z01",
+      "family_id": "z01",
+      "kind": "unsupported_or_no_match",
+      "split": "dev",
+      "query": "replacement left hinge for model zxq 441 laptop",
+      "intent": "An exact compatible replacement hinge. Generic laptops/accessories are irrelevant; zero relevant catalog products may be correct.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "z02",
+      "family_id": "z02",
+      "kind": "unsupported_or_no_match",
+      "split": "test",
+      "query": "spare charging cradle for orbit pulse 73",
+      "intent": "An exact compatible charging cradle for the named fictional model. Do not invent compatibility; no relevant products may exist.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "z03",
+      "family_id": "z03",
+      "kind": "unsupported_or_no_match",
+      "split": "test",
+      "query": "book in Icelandic about repairing accordion reeds",
+      "intent": "A book meeting language and narrow topic constraints. Generic books/stationery are irrelevant.",
+      "filters": {},
+      "sort": "relevance"
+    },
+    {
+      "query_id": "z04",
+      "family_id": "z04",
+      "kind": "unsupported_or_no_match",
+      "split": "dev",
+      "query": "glass bottle that holds exactly 37 litres",
+      "intent": "A glass bottle with explicit 37-litre capacity. Do not infer size; no relevant products may exist.",
+      "filters": {},
+      "sort": "relevance"
+    }
+  ]
+}

@@ -22,7 +22,16 @@ pg="eval-pg-$suffix"; es="eval-es-$suffix"; redis="eval-redis-$suffix"
 work="$(mktemp -d)"
 catalog_pid=""; search_pid=""; stub_pid=""
 
+# Keep the service logs when something fails; the failure is usually only visible there.
+keep_logs() {
+  local dest="${OUT}-logs"
+  mkdir -p "$dest" 2>/dev/null || return 0
+  cp "$work"/*.log "$dest"/ 2>/dev/null || true
+  echo "Service logs kept in $dest" >&2
+}
+
 cleanup() {
+  [ "${succeeded:-0}" = "1" ] || keep_logs
   for pid in "$search_pid" "$catalog_pid" "$stub_pid"; do
     [ -n "$pid" ] && kill "$pid" 2>/dev/null && wait "$pid" 2>/dev/null
   done
@@ -66,6 +75,10 @@ def embed(text):
     norm = math.sqrt(sum(v * v for v in vector)) or 1.0
     return [v / norm for v in vector]
 class Handler(http.server.BaseHTTPRequestHandler):
+    # HTTP/1.0 closes the connection after each response, which the client sees as a write
+    # failure part-way through a batch. Keep-alive with an explicit Content-Length is what
+    # a real service would do.
+    protocol_version = 'HTTP/1.1'
     def log_message(self, *args): pass
     def _send(self, payload):
         body = json.dumps(payload).encode()
@@ -74,17 +87,55 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         self._send({"status": "ok", "model": "hashing-stub", "dimensions": DIMENSIONS})
     def do_POST(self):
-        payload = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))) or b'{}')
-        texts = payload.get('texts') or [payload.get('text', '')]
-        vectors = [embed(t) for t in texts]
-        self._send({"embeddings": vectors, "embedding": vectors[0],
-                    "model": "hashing-stub", "dimensions": DIMENSIONS})
+        try:
+            # The client streams the batch with chunked transfer encoding, so there is no
+            # Content-Length to read. Reading zero bytes made every batch look like an empty
+            # request, which the stub then answered with a single embedding -- and the client
+            # correctly rejected the mismatched response.
+            raw = b''
+            if 'chunked' in (self.headers.get('Transfer-Encoding') or '').lower():
+                while True:
+                    size_line = self.rfile.readline().strip()
+                    if not size_line:
+                        break
+                    size = int(size_line.split(b';')[0], 16)
+                    if size == 0:
+                        self.rfile.readline()
+                        break
+                    while size > 0:
+                        chunk = self.rfile.read(size)
+                        if not chunk:
+                            break
+                        raw += chunk
+                        size -= len(chunk)
+                    self.rfile.readline()
+            else:
+                length = int(self.headers.get('Content-Length', 0))
+                while len(raw) < length:
+                    chunk = self.rfile.read(length - len(raw))
+                    if not chunk:
+                        break
+                    raw += chunk
+            payload = json.loads(raw or b'{}')
+            texts = payload.get('texts') or [payload.get('text', '')]
+            vectors = [embed(t) for t in texts]
+            with open(sys.argv[2], 'a') as audit:
+                audit.write(f"asked={len(texts)} returned={len(vectors)} dims={len(vectors[0]) if vectors else 0}\n")
+            self._send({"embeddings": vectors, "embedding": vectors[0],
+                        "model": "hashing-stub", "dimensions": DIMENSIONS})
+        except Exception as error:            # answer, rather than dropping the connection
+            body = json.dumps({"error": str(error)}).encode()
+            self.send_response(500)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True; daemon_threads = True; request_queue_size = 256
 Server(('127.0.0.1', int(sys.argv[1])), Handler).serve_forever()
 STUB
 embedding_port="$(free_port)"
-python3 "$work/embedding_stub.py" "$embedding_port" &
+python3 "$work/embedding_stub.py" "$embedding_port" "$work/embedding.log" &
 stub_pid=$!
 
 catalog_jar="$(ls backend/catalog-service/target/catalog-service-*.jar 2>/dev/null | grep -v sources | head -1 || true)"
@@ -115,6 +166,10 @@ SPRING_FLYWAY_ENABLED=false CATALOG_SEED_SIZE="$SEED_SIZE" \
   GOCOMMERCE_SEARCH_BASE_URL="http://127.0.0.1:${search_port}" \
   java -jar "$catalog_jar" --spring.profiles.active=seed --spring.main.web-application-type=none \
   > "$work/seed.log" 2>&1 || { echo "seeding failed" >&2; tail -25 "$work/seed.log" >&2; exit 1; }
+seeded="$(grep -oE 'Seeded or updated [0-9]+' "$work/seed.log" | grep -oE '[0-9]+' | tail -1 || true)"
+[ "${seeded:-0}" -gt 0 ] || {
+  echo "FAIL: the seed job reported no products written" >&2; tail -25 "$work/seed.log" >&2; exit 1; }
+echo "   seeded ${seeded} products"
 
 echo "Starting catalog-service on ${catalog_port}"
 SPRING_FLYWAY_ENABLED=false SERVER_PORT="$catalog_port" \
@@ -127,11 +182,20 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 
+# The catalog client's circuit breaker falls back to an empty page, so a catalog that is
+# unreachable is indistinguishable from one that is empty. Check before indexing.
+catalog_total="$(curl -sf "http://127.0.0.1:${catalog_port}/api/v1/products?page=0&size=1" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("totalElements", 0))')"
+[ "${catalog_total:-0}" -gt 0 ] || {
+  echo "FAIL: catalog-service is serving ${catalog_total} products" >&2; tail -25 "$work/catalog.log" >&2; exit 1; }
+echo "   catalog is serving ${catalog_total} products"
+
 echo "Starting search-service on ${search_port}"
 SERVER_PORT="$search_port" \
 SPRING_ELASTICSEARCH_URIS="http://127.0.0.1:${es_port}" \
 SPRING_DATA_REDIS_HOST=127.0.0.1 SPRING_DATA_REDIS_PORT="$redis_port" \
 EMBEDDING_SERVICE_BASE_URL="http://127.0.0.1:${embedding_port}" \
+SEARCH_INDEXING_BATCH_SIZE=32 SEARCH_HTTP_READ_TIMEOUT=30s SEARCH_HTTP_CONNECT_TIMEOUT=5s \
 CATALOG_SERVICE_URL="http://127.0.0.1:${catalog_port}" \
 CATALOG_BASE_URL="http://127.0.0.1:${catalog_port}" \
 RECOMMENDATION_BASE_URL="http://127.0.0.1:1" \
@@ -198,3 +262,4 @@ print(f"Run:  {run}")
 print("Nothing here is a relevance number yet. Grade the pool per RUBRIC.md, then run"
       " graded_eval.py evaluate.")
 PY
+succeeded=1

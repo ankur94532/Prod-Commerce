@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-09-09T10:50:42.472002+00:00",
+  "query_sha256": "3724f8c18b215b1c7c50875f2fb8cb8b2e47916431205b099b48e9fcd83cf1a7",
+  "catalog_sha256": "882c50b83366cbb854d1ff3c794a8beeee09c76a801a9589befc7ca43d5e4c62",
+  "config_sha256": "53011f419c5b236a2d230c9cb077fde7e1fa7c107e02698104e4735479dc8a86",
+  "requests_sha256": "d7898113ace6bb944567cbd81e74c670931b514cc49dc6a2421533a7680264b1",
+  "collector_sha256": "6c6408fd5d401261c9217131aaedfe3092a51321247db1aa45920c9002664d24",
+  "depth": 10,
+  "seed": 42,
+  "modes": [
+    "text",
+    "vector",
+    "hybrid",
+    "hybrid_rrf"
+  ],
+  "retrieval": {
+    "vector": {
+      "mode": "vector",
+      "algorithm": "hnsw_cosine",
+      "totalRelation": "ann_candidates",
+      "candidateWindow": 100,
+      "rrfRankConstant": 0,
+      "keywordWeight": 0.0,
+      "vectorWeight": 1.0
+    },
+    "hybrid_rrf": {
+      "mode": "hybrid_rrf",
+      "algorithm": "rrf_union_hnsw_vector",
+      "totalRelation": "candidate_union",
+      "candidateWindow": 100,
+      "rrfRankConstant": 60,
+      "keywordWeight": 0.0,
+      "vectorWeight": 0.0
+    },
+    "text": {
+      "mode": "text",
+      "algorithm": "lexical_with_rules",
+      "totalRelation": "exact",
+      "candidateWindow": 0,
+      "rrfRankConstant": 0,
+      "keywordWeight": 1.0,
+      "vectorWeight": 0.0
+    },
+    "hybrid": {
+      "mode": "hybrid",
+      "algorithm": "lexically_gated_weighted_cosine",
+      "totalRelation": "exact",
+      "candidateWindow": 0,
+      "rrfRankConstant": 0,
+      "keywordWeight": 1.0,
+      "vectorWeight": 1.5
+    }
+  },
+  "attempted": 112,
+  "errors": 0,
+  "index_and_model_identity": "operator_declared_not_verified_by_collector",
+  "cache_regime": "redis started empty for this run; each query issued once per mode",
+  "corpus_provenance": "generated seed catalog of 600 products, not a real assortment",
+  "operator_config": {
+    "index_identity": "disposable elasticsearch:8.15.2, single node, index rebuilt for this run",
+    "embedding_model": "hashing-stub (deterministic bag-of-words, not a trained model)",
+    "embedding_revision": "ops/evaluation/collect-run.sh embedded stub",
+    "cache_regime": "redis started empty for this run; each query issued once per mode",
+    "corpus_provenance": "generated seed catalog of 600 products, not a real assortment"
+  },
+  "latency_scope": "single-pass serial HTTP observations; randomized mode order; not a throughput benchmark",
+  "query_provenance": {
+    "author_type": "ai",
+    "author": "Codex",
+    "source": "Manually authored task descriptions, not sampled from catalog names/descriptions or existing generated queries. Author saw the system taxonomy and search code.",
+    "catalog_independent": true,
+    "judgment_status": "unjudged",
+    "limitations": [
+      "Not shopper logs or human-authored queries.",
+      "Small exploratory challenge set; not representative traffic.",
+      "Test split is frozen for local ablations, not proof against broader model training contamination."
+    ]
+  }
+}

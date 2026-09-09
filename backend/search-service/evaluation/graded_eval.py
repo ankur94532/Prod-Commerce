@@ -135,9 +135,17 @@ def validate_response(response, mode, depth):
     require(isinstance(response, dict) and isinstance(response.get('items'), list), 'Invalid search response')
     info = response.get('retrieval')
     require(isinstance(info, dict) and info.get('mode') == mode, 'Missing/mismatched retrieval metadata (old server or fallback)')
-    algorithms = {'text': 'lexical_with_rules', 'vector': 'exact_cosine', 'hybrid': 'lexically_gated_weighted_cosine', 'hybrid_rrf': 'rrf_union_exact_vector'}
+    # An allowlist, deliberately: a run whose retrieval changed underneath it is not
+    # comparable to an earlier one. These names moved when vector search went from exact
+    # script scoring to approximate nearest neighbours, and the evaluator refused every
+    # affected request until this was updated -- which is the behaviour we want.
+    algorithms = {'text': 'lexical_with_rules', 'vector': 'hnsw_cosine',
+                  'hybrid': 'lexically_gated_weighted_cosine', 'hybrid_rrf': 'rrf_union_hnsw_vector'}
     require(info.get('algorithm') == algorithms[mode], 'Unexpected algorithm')
-    require(info.get('totalRelation') == ('candidate_union' if mode == 'hybrid_rrf' else 'exact'), 'Unknown total relation')
+    # ANN totals are approximate by construction; only the lexical paths report exact counts.
+    relations = {'text': 'exact', 'hybrid': 'exact',
+                 'vector': 'ann_candidates', 'hybrid_rrf': 'candidate_union'}
+    require(info.get('totalRelation') == relations[mode], 'Unknown total relation')
     if mode == 'hybrid_rrf':
         require(type(info.get('candidateWindow')) is int and info['candidateWindow'] >= depth, 'RRF candidate window smaller than collection depth')
         require(type(info.get('rrfRankConstant')) is int and info['rrfRankConstant'] > 0, 'Invalid RRF constant')

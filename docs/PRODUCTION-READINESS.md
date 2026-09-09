@@ -245,9 +245,14 @@ Accurate as of the review on 2026-09-09. Anything not listed here is covered by 
 - **No SLO has been measured.** `docs/SLO.md` states intended objectives. The load harness
   is verified but has never been run against the application, so no latency or throughput
   figure here is an observation.
-- **No graded relevance evaluation.** The harness, rubric and 28-query set are built and
-  tested; `queries.v1.json` is AI-authored and unjudged. This needs human judgement, or an
-  explicitly AI-labelled run reported as exactly that. Do not invent labels.
+- **The graded evaluation is AI-judged, not human-judged.** A full run now exists
+  (`backend/search-service/evaluation/runs/2026-09-09-ai`, evidence class
+  `ai_judged_pooled_evaluation`): 14 held-out queries, 271 blinded pairs, graded by Claude
+  against the rubric. hybrid_rrf led on every metric (NDCG@10 0.756 against lexical 0.737)
+  but its advantage is not distinguishable from zero. **The embedding service was a hashing
+  stub, so the vector numbers measure a bag-of-words hash and say nothing about a trained
+  model.** The queries are AI-authored and the labels AI-assigned; no human judged anything.
+  See `evidence/search-evaluation-ai-judged-2026-09-09.json`.
 - **Nothing has been deployed.** Staging and production overlays and an ordered deploy
   procedure exist and validate; no cluster has run them.
 
