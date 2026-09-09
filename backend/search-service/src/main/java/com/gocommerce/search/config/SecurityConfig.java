@@ -7,6 +7,7 @@ import com.gocommerce.platform.security.JwtProperties;
 import com.gocommerce.platform.security.JwtVerifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -23,6 +24,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * the three mutating endpoints are not: reindex deletes and recreates the live index, and
  * the single-document endpoints can insert or remove anything from search results.
  */
+// A filter chain is meaningless outside a servlet web application, and the migration job
+// runs with web-application-type=none. Without this the job fails to start, because
+// HttpSecurity is only auto-configured for servlet applications.
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @Configuration
 @EnableWebSecurity
 @EnableConfigurationProperties(JwtProperties.class)

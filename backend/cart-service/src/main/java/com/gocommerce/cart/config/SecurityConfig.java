@@ -4,6 +4,7 @@ import com.gocommerce.platform.security.JwtAuthenticationFilter;
 import com.gocommerce.platform.security.JwtProperties;
 import com.gocommerce.platform.security.JwtVerifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -15,6 +16,10 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @EnableWebSecurity
+// A filter chain is meaningless outside a servlet web application, and the migration job
+// runs with web-application-type=none. Without this the job fails to start, because
+// HttpSecurity is only auto-configured for servlet applications.
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @Configuration
 @EnableConfigurationProperties(JwtProperties.class)
 public class SecurityConfig {

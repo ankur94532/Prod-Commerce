@@ -144,5 +144,31 @@ if [ "$started" -ne 1 ]; then
 fi
 echo "   started against the migrated schema"
 
-echo "Verified the migration job: schema applied out of band, repeatable, and a service"
-echo "started against an un-migrated database refuses rather than limping."
+echo "5. Every other service that owns a database can run its migration job too"
+# The first version of this drill only exercised order-service, which happens to declare
+# @EnableWebSecurity and so supplies HttpSecurity itself. Every service whose security
+# config relied on Boot's servlet-only auto-configuration failed to start under
+# web-application-type=none, so their migration jobs would have crash-looped.
+for service in auth catalog analytics recommendation; do
+  db="ecom_${service}"
+  docker exec "$container" psql -U order_service -d ecom_order -tAc \
+    "SELECT 1" >/dev/null 2>&1 || true
+  docker exec "$container" createdb -U order_service "$db" >/dev/null 2>&1 || true
+  other_jar="$(ls "backend/${service}-service/target/${service}-service-"*.jar 2>/dev/null | grep -v sources | head -1 || true)"
+  if [ -z "$other_jar" ]; then
+    mvn -f backend/pom.xml -pl "${service}-service" -am -o -q package -DskipTests
+    other_jar="$(ls "backend/${service}-service/target/${service}-service-"*.jar | grep -v sources | head -1)"
+  fi
+  SPRING_DATASOURCE_URL="jdbc:postgresql://127.0.0.1:${port}/${db}" \
+  SPRING_FLYWAY_ENABLED=true \
+    run_limited 240 java -jar "$other_jar" --spring.profiles.active=migrate \
+    > "/tmp/migration-check-${service}.log" 2>&1
+  grep -q "Schema is at version" "/tmp/migration-check-${service}.log" || {
+    echo "FAIL: ${service}-service could not run its migration job" >&2
+    tail -20 "/tmp/migration-check-${service}.log" >&2
+    exit 1; }
+  echo "   ${service}-service migrated and exited"
+done
+
+echo "Verified the migration job for every service that owns a database: schema applied out"
+echo "of band, repeatable, and a service started against an un-migrated database refuses."
