@@ -13,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.IndexOperations;
+import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -20,6 +21,11 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.*;
@@ -71,8 +77,11 @@ class SearchServiceReindexTest {
 
     @BeforeEach
     void setUp() {
-        when(elasticsearchOperations.indexOps(ProductDocument.class))
-                .thenReturn(indexOperations);
+        // Rebuilds now target a freshly created index and only move the alias at the end,
+        // so every index operation is addressed by name rather than by document class.
+        lenient().when(elasticsearchOperations.indexOps(any(IndexCoordinates.class))).thenReturn(indexOperations);
+        lenient().when(elasticsearchOperations.indexOps(ProductDocument.class)).thenReturn(indexOperations);
+        lenient().when(indexOperations.getAliases(anyString())).thenReturn(Map.of());
 
         catalogClient = new TestCatalogClient();
 
@@ -85,9 +94,9 @@ class SearchServiceReindexTest {
     }
 
     @Test
-    void reindexProducts_recreatesIndexAndReturnsDocumentCount() {
-        when(indexOperations.exists()).thenReturn(true);
-        when(productSearchRepository.count()).thenReturn(1L);
+    void reindexBuildsANewIndexAndPromotesItWithoutDeletingTheLiveOneFirst() {
+        when(elasticsearchOperations.count(any(), eq(ProductDocument.class), any(IndexCoordinates.class)))
+                .thenReturn(1L);
 
         Map<String, Object> p1 = new HashMap<>();
         p1.put("id", "1");
@@ -102,23 +111,41 @@ class SearchServiceReindexTest {
         int count = searchService.reindexProducts();
 
         assertEquals(1, count);
-
-        verify(indexOperations).delete();
+        // The old layout deleted the live index before rebuilding; nothing is deleted now
+        // until the alias has already moved.
         verify(indexOperations).create(anyMap());
-        verify(productSearchRepository).saveAll(anyList());
+        verify(indexOperations).alias(any());
+        verify(elasticsearchOperations).save(anyList(), any(IndexCoordinates.class));
         verify(indexOperations).refresh();
         verify(searchCache).clear();
     }
 
     @Test
-    void reindexProductsDetailed_reportsConsistencyMismatch() {
-        when(indexOperations.exists()).thenReturn(false);
-        when(productSearchRepository.count()).thenReturn(0L);
+    void documentsAreWrittenToTheBuildIndexNotThroughTheLiveAlias() {
+        when(elasticsearchOperations.count(any(), eq(ProductDocument.class), any(IndexCoordinates.class)))
+                .thenReturn(1L);
+        Map<String, Object> p1 = new HashMap<>();
+        p1.put("id", "1");
+        p1.put("name", "Galaxy S26 Ultra");
+        catalogClient.setProducts(List.of(p1));
+
+        searchService.reindexProducts();
+
+        var coordinates = org.mockito.ArgumentCaptor.forClass(IndexCoordinates.class);
+        verify(elasticsearchOperations).save(anyList(), coordinates.capture());
+        assertNotEquals(SearchIndexManager.ALIAS, coordinates.getValue().getIndexName());
+        assertTrue(coordinates.getValue().getIndexName().startsWith(SearchIndexManager.ALIAS + "-"));
+    }
+
+    @Test
+    void anInconsistentRebuildIsNeitherPromotedNorLeftBehind() {
+        // Elasticsearch ends up with fewer documents than the catalog handed over.
+        when(elasticsearchOperations.count(any(), eq(ProductDocument.class), any(IndexCoordinates.class)))
+                .thenReturn(0L);
 
         Map<String, Object> p1 = new HashMap<>();
         p1.put("id", "1");
         p1.put("name", "Galaxy S26 Ultra");
-
         catalogClient.setProducts(List.of(p1));
 
         ReindexResult result = searchService.reindexProductsDetailed();
@@ -127,12 +154,15 @@ class SearchServiceReindexTest {
         assertEquals(1, result.catalogProducts());
         assertEquals(0, result.indexedDocuments());
         assertEquals(false, result.consistent());
+        verify(indexOperations, never()).alias(any());
+        verify(indexOperations).delete();
+        verify(searchCache, never()).clear();
     }
 
     @Test
     void reindexProducts_skipsProductsWithoutId() {
-        when(indexOperations.exists()).thenReturn(false);
-        when(productSearchRepository.count()).thenReturn(0L);
+        when(elasticsearchOperations.count(any(), eq(ProductDocument.class), any(IndexCoordinates.class)))
+                .thenReturn(0L);
 
         Map<String, Object> p1 = new HashMap<>();
         p1.put("name", "No Id Product");
@@ -143,7 +173,6 @@ class SearchServiceReindexTest {
         int count = searchService.reindexProducts();
 
         assertEquals(0, count);
-        verify(productSearchRepository, never()).saveAll(anyList());
-        verify(searchCache).clear();
+        verify(elasticsearchOperations, never()).save(anyList(), any(IndexCoordinates.class));
     }
 }

@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -48,7 +49,7 @@ class SearchServiceTest {
                         new BigDecimal("199900"),
                         "INR",
                         "https://example.com/mac.jpg")),
-                1);
+                1, 0, 20, 1, new com.gocommerce.search.dto.SearchDtos.RetrievalInfo("hybrid", "lexically_gated_weighted_cosine", "exact", 0, 0, 1, 1.5));
 
         when(cache.get(normalizedReq)).thenReturn(Optional.of(cachedResponse));
 
@@ -379,7 +380,7 @@ class SearchServiceTest {
     }
 
     @Test
-    void search_returnsEmptyVectorResult_whenQueryEmbedsToZeroVector() {
+    void search_rejectsInvalidVectorWithoutCachingAFalseZeroResult() {
         ProductSearchRepository repo = mock(ProductSearchRepository.class);
         SearchCache cache = mock(SearchCache.class);
         ElasticsearchOperations elasticsearchOperations = mock(ElasticsearchOperations.class);
@@ -391,13 +392,11 @@ class SearchServiceTest {
         when(cache.get(req)).thenReturn(Optional.empty());
         when(embeddingService.embed("!!!")).thenReturn(Collections.nCopies(ProductDocument.SEARCH_EMBEDDING_DIMENSIONS, 0.0f));
 
-        SearchResponse result = service.search(req);
-
-        assertThat(result.total()).isZero();
-        assertThat(result.items()).isEmpty();
+        assertThatThrownBy(() -> service.search(req)).isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
         verifyNoInteractions(elasticsearchOperations);
-        verify(cache).put(eq(req), any(SearchResponse.class));
+        verify(cache, never()).put(any(), any());
     }
+
 
     @Test
     void search_returnsEmptyResultForBlankQuery_withoutTouchingCacheOrElasticsearch() {
@@ -458,45 +457,17 @@ class SearchServiceTest {
     }
 
     @Test
-    void hybridSearchFallsBackToKeywordQuery_whenEmbeddingIsZeroVector() {
-        ProductSearchRepository repo = mock(ProductSearchRepository.class);
-        SearchCache cache = mock(SearchCache.class);
-        ElasticsearchOperations elasticsearchOperations = mock(ElasticsearchOperations.class);
-        ProductEmbeddingService embeddingService = mock(ProductEmbeddingService.class);
-
-        SearchService service = new SearchService(repo, cache, null, elasticsearchOperations, null, embeddingService);
-
-        SearchRequest req = new SearchRequest("unknown punctuation", null, 0, 20);
+    void hybridSearchDoesNotSilentlyChangeAlgorithmsWhenEmbeddingIsInvalid() {
+        var cache = mock(SearchCache.class);
+        var operations = mock(ElasticsearchOperations.class);
+        var embedding = mock(ProductEmbeddingService.class);
+        var service = new SearchService(mock(ProductSearchRepository.class), cache, null, operations, null, embedding);
         when(cache.get(any())).thenReturn(Optional.empty());
-        when(embeddingService.embed("unknown punctuation"))
-                .thenReturn(Collections.nCopies(ProductDocument.SEARCH_EMBEDDING_DIMENSIONS, 0.0f));
-
-        ProductDocument doc = new ProductDocument(
-                "p9",
-                "fallback-product",
-                "Fallback Product",
-                "accessories-cables",
-                new BigDecimal("999"),
-                "INR",
-                List.of("fallback"),
-                "https://example.com/fallback.jpg",
-                0L
-        );
-
-        when(elasticsearchOperations.search(
-                any(org.springframework.data.elasticsearch.core.query.Query.class),
-                eq(ProductDocument.class)))
-                .thenReturn(searchHits(doc, 1));
-
-        SearchResponse result = service.search(req);
-
-        assertThat(result.total()).isEqualTo(1);
-
-        ArgumentCaptor<org.springframework.data.elasticsearch.core.query.Query> queryCaptor =
-                ArgumentCaptor.forClass(org.springframework.data.elasticsearch.core.query.Query.class);
-        verify(elasticsearchOperations).search(queryCaptor.capture(), eq(ProductDocument.class));
-        NativeQuery nativeQuery = (NativeQuery) queryCaptor.getValue();
-        assertThat(nativeQuery.getQuery().isBool()).isTrue();
+        when(embedding.embed(anyString())).thenReturn(Collections.nCopies(ProductDocument.SEARCH_EMBEDDING_DIMENSIONS, 0.0f));
+        assertThatThrownBy(() -> service.search(new SearchRequest("quiet journeys", null, "hybrid", 0, 20)))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        verifyNoInteractions(operations);
+        verify(cache, never()).put(any(), any());
     }
 
     @Test

@@ -61,6 +61,8 @@ class SearchControllerTest {
         @Test
         void search_returnsResultFromRepository_whenCacheMiss() throws Exception {
                 // Cache miss
+                when(productEmbeddingService.embed("laptop"))
+                        .thenReturn(Collections.nCopies(ProductDocument.SEARCH_EMBEDDING_DIMENSIONS, 0.01f));
                 when(searchCache.get(any())).thenReturn(Optional.empty());
 
                 // Fake ES document
@@ -163,5 +165,21 @@ class SearchControllerTest {
                         .andExpect(jsonPath("$.total").value(1))
                         .andExpect(jsonPath("$.items[0].id").value("p2"))
                         .andExpect(jsonPath("$.items[0].category").value("shoes"));
+        }
+
+        @Test
+        void invalidModeAndUnsupportedRrfSortReturnBadRequest() throws Exception {
+                mockMvc.perform(get("/api/v1/search").param("q", "audio").param("mode", "typo_mode"))
+                        .andExpect(status().isBadRequest());
+                mockMvc.perform(get("/api/v1/search").param("q", "audio").param("mode", "hybrid_rrf").param("sort", "price_asc"))
+                        .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void dependencyFailureIsUnavailableNotAValidEmptyResult() throws Exception {
+                when(searchCache.get(any())).thenReturn(Optional.empty());
+                when(productEmbeddingService.embed("outage probe")).thenThrow(new IllegalStateException("embedding down"));
+                mockMvc.perform(get("/api/v1/search").param("q", "outage probe").param("mode", "hybrid"))
+                        .andExpect(status().isServiceUnavailable());
         }
 }

@@ -1,10 +1,15 @@
 package com.gocommerce.search.client;
 
+import com.gocommerce.platform.security.InternalServiceTokens;
 import com.gocommerce.search.config.RecommendationProperties;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -19,10 +24,15 @@ public class RecommendationClient {
 
     private final RestTemplate restTemplate;
     private final String baseUrl;
+    private final HttpEntity<Void> internalRequest;
 
-    public RecommendationClient(RestTemplate restTemplate, RecommendationProperties props) {
+    public RecommendationClient(RestTemplate restTemplate, RecommendationProperties props,
+                                @Value("${security.internal.service-token:}") String internalServiceToken) {
         this.restTemplate = restTemplate;
         this.baseUrl = props.getBaseUrl();
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(InternalServiceTokens.HEADER, internalServiceToken);
+        this.internalRequest = new HttpEntity<>(headers);
     }
 
     @CircuitBreaker(name = "recommendationClient", fallbackMethod = "fetchPopularityFallback")
@@ -30,7 +40,9 @@ public class RecommendationClient {
     public List<PopularityItem> fetchPopularity() {
         String url = baseUrl + "/internal/v1/recommendations/popularity?limit=1000";
 
-        PopularityResponse response = restTemplate.getForObject(url, PopularityResponse.class);
+        PopularityResponse response = restTemplate
+                .exchange(url, HttpMethod.GET, internalRequest, PopularityResponse.class)
+                .getBody();
         if (response == null || response.items() == null) {
             return Collections.emptyList();
         }

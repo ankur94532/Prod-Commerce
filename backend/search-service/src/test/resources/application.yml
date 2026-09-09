@@ -1,0 +1,7 @@
+# Test-only credentials. Production supplies these from the environment and fails fast
+# when they are absent, which is why they are not defaulted in the main configuration.
+security:
+  jwt:
+    secret: test_search_secret_very_long_123456789012
+  internal:
+    service-token: test_internal_service_token_1234567890

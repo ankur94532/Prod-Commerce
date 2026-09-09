@@ -6,6 +6,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class SearchProperties {
 
     private final Hybrid hybrid = new Hybrid();
+    private final Rrf rrf = new Rrf();
+    public Rrf getRrf() { return rrf; }
+
     private final Indexing indexing = new Indexing();
 
     public Hybrid getHybrid() {
@@ -34,6 +37,21 @@ public class SearchProperties {
 
         public void setVectorWeight(double vectorWeight) {
             this.vectorWeight = vectorWeight;
+        }
+    }
+
+    public static class Rrf {
+        private int candidateWindow = 100;
+        private int rankConstant = 60;
+        public int getCandidateWindow() { return candidateWindow; }
+        public void setCandidateWindow(int value) {
+            if (value < 1 || value > 1000) throw new IllegalArgumentException("RRF candidate window must be 1–1000");
+            candidateWindow = value;
+        }
+        public int getRankConstant() { return rankConstant; }
+        public void setRankConstant(int value) {
+            if (value < 1) throw new IllegalArgumentException("RRF rank constant must be positive");
+            rankConstant = value;
         }
     }
 

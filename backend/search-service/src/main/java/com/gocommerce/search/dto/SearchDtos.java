@@ -63,13 +63,21 @@ public class SearchDtos {
             String thumbnailUrl
     ) {}
 
+    public record RetrievalInfo(String mode, String algorithm, String totalRelation,
+                                int candidateWindow, int rrfRankConstant,
+                                double keywordWeight, double vectorWeight) {}
+
     public record SearchResponse(
             List<SearchResultItem> items,
             long total,
             int page,
             int size,
-            int totalPages
+            int totalPages,
+            RetrievalInfo retrieval
     ) {
+        public SearchResponse(List<SearchResultItem> items, long total, int page, int size, int totalPages) {
+            this(items, total, page, size, totalPages, null);
+        }
         public SearchResponse(List<SearchResultItem> items, long total) {
             this(items, total, 0, items != null ? items.size() : 0,
                     items == null || items.isEmpty() ? 0 : 1);

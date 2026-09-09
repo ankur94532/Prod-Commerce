@@ -6,6 +6,9 @@ import com.gocommerce.search.client.CatalogClient.CatalogProductPage;
 import com.gocommerce.search.config.ProductIndexSettings;
 import com.gocommerce.search.config.SearchProperties;
 import com.gocommerce.search.dto.SearchDtos.SearchRequest;
+import com.gocommerce.search.dto.SearchDtos.RetrievalInfo;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import com.gocommerce.search.dto.SearchDtos.SearchResponse;
 import com.gocommerce.search.dto.SearchDtos.SearchResultItem;
 import com.gocommerce.search.metrics.SearchMetrics;
@@ -109,6 +112,10 @@ public class SearchService {
     private final ProductEmbeddingService embeddingService;
     private final SearchProperties searchProperties;
     private final int indexingBatchSize;
+    private final SearchIndexManager indexManager;
+
+    /** Rebuild leftovers older than this are cleaned up; long enough not to race a live rebuild. */
+    private static final long ORPHANED_INDEX_RETENTION_MS = java.time.Duration.ofHours(6).toMillis();
 
     @Autowired
     public SearchService(ProductSearchRepository productSearchRepository,
@@ -126,6 +133,7 @@ public class SearchService {
         this.embeddingService = embeddingService;
         this.searchProperties = searchProperties != null ? searchProperties : new SearchProperties();
         this.indexingBatchSize = Math.max(1, this.searchProperties.getIndexing().getBatchSize());
+        this.indexManager = elasticsearchOperations != null ? new SearchIndexManager(elasticsearchOperations) : null;
     }
 
     public SearchService(ProductSearchRepository productSearchRepository,
@@ -164,10 +172,22 @@ public class SearchService {
         int page = request.page() != null ? Math.max(request.page(), 0) : 0;
         int size = request.size() != null ? Math.max(1, Math.min(request.size(), 100)) : 20;
         String mode = normalizedMode(request.mode());
-        String sort = usesVectorScoring(mode) ? null : normalized(request.sort());
+        String sort = normalized(request.sort());
+        if (sort != null && !Set.of("relevance", "price_asc", "price_desc", "name_asc", "name_desc", "newest").contains(sort)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported sort");
+        }
+        if ("hybrid_rrf".equals(mode) && sort != null && !"relevance".equals(sort)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "hybrid_rrf supports relevance sorting only");
+        }
+        if (request.minPrice() != null && request.maxPrice() != null && request.minPrice().compareTo(request.maxPrice()) > 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "minPrice must not exceed maxPrice");
+        }
+        if ((long) page * size + size > 10000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Search page exceeds supported result window");
+        }
 
         if (query == null || query.isBlank()) {
-            return new SearchResponse(List.of(), 0);
+            return new SearchResponse(List.of(), 0, page, size, 0, retrievalInfo(mode));
         }
 
         // normalize for cache key
@@ -190,7 +210,7 @@ public class SearchService {
                 size);
 
         var cached = searchCache.get(normalizedRequest);
-        if (cached.isPresent()) {
+        if (cached.isPresent() && retrievalInfo(mode).equals(cached.get().retrieval())) {
             if (searchMetrics != null) {
                 searchMetrics.recordCachedSearch();
             }
@@ -208,19 +228,15 @@ public class SearchService {
     // Fallback for searchCore CB
     @SuppressWarnings("unused")
     public SearchResponse searchFallback(SearchRequest request, Throwable ex) {
-        String q = (request != null ? request.query() : null);
-        String cat = (request != null ? request.category() : null);
-        log.warn("SearchService.search fallback triggered for query='{}', category='{}'",
-                q, cat, ex);
-
-        if (searchMetrics != null) {
-            searchMetrics.incrementZeroResult();
-        }
-
-        return new SearchResponse(List.of(), 0);
+        // Invalid requests retain their status; dependency failures must not masquerade as zero hits.
+        if (ex instanceof ResponseStatusException status) throw status;
+        log.warn("Search unavailable: {}", ex.getClass().getSimpleName());
+        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Search temporarily unavailable", ex);
     }
 
+
     private SearchResponse doSearchAndCache(SearchRequest normalizedRequest) {
+        if ("hybrid_rrf".equals(normalizedRequest.mode())) return doRrfSearchAndCache(normalizedRequest);
         if (isVectorMode(normalizedRequest.mode())) {
             return doVectorSearchAndCache(normalizedRequest);
         }
@@ -258,7 +274,7 @@ public class SearchService {
 
         long total = searchHits.getTotalHits();
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
-        SearchResponse response = new SearchResponse(items, total, page, size, totalPages);
+        SearchResponse response = new SearchResponse(items, total, page, size, totalPages, retrievalInfo(normalizedRequest.mode()));
         searchCache.put(normalizedRequest, response);
 
         return response;
@@ -333,13 +349,12 @@ public class SearchService {
         int size = normalizedRequest.size() != null ? normalizedRequest.size() : 20;
         List<Float> queryVector = embeddingService.embed(normalizedRequest.query());
 
-        if (isZeroVector(queryVector)) {
-            return doKeywordSearchAndCache(normalizedRequest);
-        }
+        validateQueryVector(queryVector);
 
         SearchHits<ProductDocument> searchHits = elasticsearchOperations.search(
                 NativeQuery.builder()
                         .withQuery(buildHybridQuery(normalizedRequest, queryVector))
+                        .withSort(sortOptions(normalizedRequest.sort()))
                         .withPageable(PageRequest.of(page, size))
                         .withTrackTotalHits(true)
                         .build(),
@@ -356,7 +371,7 @@ public class SearchService {
 
         long total = searchHits.getTotalHits();
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
-        SearchResponse response = new SearchResponse(items, total, page, size, totalPages);
+        SearchResponse response = new SearchResponse(items, total, page, size, totalPages, retrievalInfo(normalizedRequest.mode()));
         searchCache.put(normalizedRequest, response);
 
         return response;
@@ -367,15 +382,12 @@ public class SearchService {
         int size = normalizedRequest.size() != null ? normalizedRequest.size() : 20;
         List<Float> queryVector = embeddingService.embed(normalizedRequest.query());
 
-        if (isZeroVector(queryVector)) {
-            SearchResponse response = new SearchResponse(List.of(), 0, page, size, 0);
-            searchCache.put(normalizedRequest, response);
-            return response;
-        }
+        validateQueryVector(queryVector);
 
         SearchHits<ProductDocument> searchHits = elasticsearchOperations.search(
                 NativeQuery.builder()
                         .withQuery(buildVectorQuery(normalizedRequest, queryVector))
+                        .withSort(sortOptions(normalizedRequest.sort()))
                         .withPageable(PageRequest.of(page, size))
                         .withTrackTotalHits(true)
                         .build(),
@@ -392,7 +404,7 @@ public class SearchService {
 
         long total = searchHits.getTotalHits();
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
-        SearchResponse response = new SearchResponse(items, total, page, size, totalPages);
+        SearchResponse response = new SearchResponse(items, total, page, size, totalPages, retrievalInfo(normalizedRequest.mode()));
         searchCache.put(normalizedRequest, response);
 
         return response;
@@ -501,17 +513,16 @@ public class SearchService {
     }
 
     private List<SortOptions> sortOptions(String sort) {
-        if (sort == null || sort.isBlank() || "relevance".equals(sort)) {
-            return List.of();
-        }
-        return switch (sort) {
-            case "newest" -> List.of(fieldSort("productId", SortOrder.Desc));
-            case "price_asc" -> List.of(fieldSort("price", SortOrder.Asc));
-            case "price_desc" -> List.of(fieldSort("price", SortOrder.Desc));
-            case "name_asc" -> List.of(fieldSort("nameSort", SortOrder.Asc));
-            case "name_desc" -> List.of(fieldSort("nameSort", SortOrder.Desc));
-            default -> List.of();
+        SortOptions primary = switch (sort == null ? "relevance" : sort) {
+            case "newest" -> fieldSort("productId", SortOrder.Desc);
+            case "price_asc" -> fieldSort("price", SortOrder.Asc);
+            case "price_desc" -> fieldSort("price", SortOrder.Desc);
+            case "name_asc" -> fieldSort("nameSort", SortOrder.Asc);
+            case "name_desc" -> fieldSort("nameSort", SortOrder.Desc);
+            default -> SortOptions.of(s -> s.score(score -> score.order(SortOrder.Desc)));
         };
+        // Numeric catalog IDs are unique; slug also stabilizes documents imported without a numeric ID.
+        return List.of(primary, fieldSort("productId", SortOrder.Asc), fieldSort("slug", SortOrder.Asc));
     }
 
     private SortOptions fieldSort(String field, SortOrder order) {
@@ -532,14 +543,13 @@ public class SearchService {
 
     @Transactional
     public ReindexResult reindexProductsDetailed() {
+        // Build into a new index that nothing reads. The live alias is only moved once the
+        // rebuild is complete and consistent, so a failure here leaves search serving the
+        // previous index rather than an empty one.
+        String buildIndex = null;
         try {
-            var indexOps = elasticsearchOperations.indexOps(ProductDocument.class);
-
-            if (indexOps.exists()) {
-                indexOps.delete();
-            }
-            indexOps.create(ProductIndexSettings.settings());
-            indexOps.putMapping(indexOps.createMapping(ProductDocument.class));
+            boolean migratingLegacyIndex = indexManager.hasLegacyConcreteIndex();
+            buildIndex = indexManager.createIndex();
 
             int indexed = 0;
             int catalogProducts = 0;
@@ -558,7 +568,8 @@ public class SearchService {
                     int end = Math.min(start + indexingBatchSize, products.size());
                     List<ProductDocument> docs = toDocuments(products.subList(start, end));
                     if (!docs.isEmpty()) {
-                        productSearchRepository.saveAll(docs);
+                        elasticsearchOperations.save(docs,
+                                org.springframework.data.elasticsearch.core.mapping.IndexCoordinates.of(buildIndex));
                         indexed += docs.size();
                     }
                 }
@@ -569,25 +580,46 @@ public class SearchService {
                 page++;
             } while (page < totalPages);
 
-            indexOps.refresh();
-            long indexedDocuments = productSearchRepository.count();
-            clearSearchCache();
+            indexManager.refresh(buildIndex);
+            long indexedDocuments = indexManager.count(buildIndex);
 
-            ReindexResult result = ReindexResult.success(indexed, catalogProducts, indexedDocuments);
-            if (result.consistent()) {
-                log.info("Reindexed {} products into Elasticsearch", indexed);
-            } else {
-                log.warn("Search reindex consistency mismatch: catalogProducts={}, indexed={}, indexedDocuments={}",
-                        catalogProducts, indexed, indexedDocuments);
+            ReindexResult result = ReindexResult.success(indexed, catalogProducts, indexedDocuments,
+                    expectedCatalogProducts);
+            if (!result.consistent()) {
+                // Publishing an index we already know disagrees with the catalog would
+                // replace working results with wrong ones. Keep serving the old index.
+                log.error("Refusing to publish an inconsistent rebuild: catalogProducts={}, indexed={}, "
+                        + "indexedDocuments={}, catalogDeclaredTotal={}. The live index is unchanged.",
+                        catalogProducts, indexed, indexedDocuments, expectedCatalogProducts);
+                indexManager.dropIndex(buildIndex);
+                if (searchMetrics != null) {
+                    searchMetrics.onReindexCompleted(0);
+                }
+                return result;
             }
 
+            if (migratingLegacyIndex) {
+                indexManager.replaceLegacyIndex(buildIndex);
+            } else {
+                for (String retired : indexManager.promote(buildIndex)) {
+                    indexManager.dropIndex(retired);
+                }
+            }
+            indexManager.dropOrphanedIndices(buildIndex, ORPHANED_INDEX_RETENTION_MS);
+            clearSearchCache();
+
+            log.info("Reindexed {} products into {} and promoted it", indexed, buildIndex);
             if (searchMetrics != null) {
                 searchMetrics.onReindexCompleted(indexed);
             }
 
             return result;
         } catch (Exception ex) {
-            log.warn("Reindex failed, returning indexed=0 (catalog or ES might be down)", ex);
+            // The alias was never moved, so search keeps serving whatever it served before.
+            log.error("Reindex failed; the live search index is unchanged", ex);
+            if (buildIndex != null) {
+                indexManager.dropIndex(buildIndex);
+            }
             if (searchMetrics != null) {
                 searchMetrics.onReindexCompleted(0);
             }
@@ -947,7 +979,8 @@ public class SearchService {
         if ("vector".equalsIgnoreCase(normalized) || "semantic".equalsIgnoreCase(normalized)) {
             return "vector";
         }
-        return "hybrid";
+        if ("hybrid_rrf".equalsIgnoreCase(normalized)) return "hybrid_rrf";
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported retrieval mode");
     }
 
     private static boolean isVectorMode(String value) {
@@ -958,12 +991,60 @@ public class SearchService {
         return "hybrid".equalsIgnoreCase(value);
     }
 
-    private static boolean usesVectorScoring(String value) {
-        return isVectorMode(value) || isHybridMode(value);
+    private void validateQueryVector(List<Float> vector) {
+        if (vector == null || vector.size() != ProductDocument.SEARCH_EMBEDDING_DIMENSIONS
+                || vector.stream().anyMatch(v -> v == null || !Float.isFinite(v))
+                || vector.stream().allMatch(v -> v == 0.0f)) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Embedding unavailable or invalid");
+        }
     }
 
-    private static boolean isZeroVector(List<Float> vector) {
-        return vector == null || vector.stream().allMatch(value -> value == null || value == 0.0f);
+    private RetrievalInfo retrievalInfo(String mode) {
+        return switch (mode) {
+            case "hybrid_rrf" -> new RetrievalInfo(mode, "rrf_union_exact_vector", "candidate_union",
+                    searchProperties.getRrf().getCandidateWindow(), searchProperties.getRrf().getRankConstant(), 0, 0);
+            case "vector" -> new RetrievalInfo(mode, "exact_cosine", "exact", 0, 0, 0, 1);
+            case "hybrid" -> new RetrievalInfo(mode, "lexically_gated_weighted_cosine", "exact", 0, 0,
+                    searchProperties.getHybrid().getKeywordWeight(), searchProperties.getHybrid().getVectorWeight());
+            default -> new RetrievalInfo("text", "lexical_with_rules", "exact", 0, 0, 1, 0);
+        };
+    }
+
+    private SearchResponse doRrfSearchAndCache(SearchRequest request) {
+        List<Float> vector = embeddingService.embed(request.query());
+        validateQueryVector(vector);
+        int window = searchProperties.getRrf().getCandidateWindow();
+        int rankConstant = searchProperties.getRrf().getRankConstant();
+        // Independent retrieval with identical filters. Vector-only candidates can enter the union.
+        var lexical = elasticsearchOperations.search(NativeQuery.builder().withQuery(buildSearchQuery(request))
+                .withPageable(PageRequest.of(0, window)).withSort(sortOptions(null)).build(), ProductDocument.class);
+        var semantic = elasticsearchOperations.search(NativeQuery.builder().withQuery(buildVectorQuery(request, vector))
+                .withPageable(PageRequest.of(0, window)).withSort(sortOptions(null)).build(), ProductDocument.class);
+        var documents = new java.util.HashMap<String, ProductDocument>();
+        var scores = new java.util.HashMap<String, Double>();
+        for (var hits : List.of(lexical, semantic)) {
+            var seen = new java.util.HashSet<String>();
+            int rank = 0;
+            for (var hit : hits.getSearchHits()) {
+                rank++;
+                ProductDocument doc = hit.getContent();
+                if (seen.add(doc.getId())) {
+                    documents.putIfAbsent(doc.getId(), doc);
+                    scores.merge(doc.getId(), 1.0 / (rankConstant + rank), Double::sum);
+                }
+            }
+        }
+        var rankedIds = scores.keySet().stream().sorted(java.util.Comparator
+                .<String>comparingDouble(scores::get).reversed().thenComparing(java.util.Comparator.naturalOrder())).toList();
+        int page = request.page();
+        int size = request.size();
+        var items = rankedIds.stream().skip((long) page * size).limit(size)
+                .map(documents::get).map(this::toResultItem).toList();
+        int total = rankedIds.size();
+        var response = new SearchResponse(items, total, page, size, (total + size - 1) / size, retrievalInfo(request.mode()));
+        if (searchMetrics != null && items.isEmpty()) searchMetrics.incrementZeroResult();
+        searchCache.put(request, response);
+        return response;
     }
 
     private static String firstNonBlank(String... vals) {

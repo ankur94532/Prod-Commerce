@@ -31,6 +31,9 @@ search:
   hybrid:
     keyword-weight: ${SEARCH_HYBRID_KEYWORD_WEIGHT:1.0}
     vector-weight: ${SEARCH_HYBRID_VECTOR_WEIGHT:1.5}
+  rrf:
+    candidate-window: ${SEARCH_RRF_CANDIDATE_WINDOW:100}
+    rank-constant: ${SEARCH_RRF_RANK_CONSTANT:60}
   indexing:
     batch-size: ${SEARCH_INDEXING_BATCH_SIZE:128}
 
@@ -79,6 +82,8 @@ resilience4j:
         automatic-transition-from-open-to-half-open-enabled: true
 
       searchCore:
+        ignore-exceptions:
+          - org.springframework.web.server.ResponseStatusException
         register-health-indicator: true
         sliding-window-type: COUNT_BASED
         sliding-window-size: 50
@@ -129,3 +134,9 @@ resilience4j:
           - java.io.IOException
           - java.net.SocketTimeoutException
           - org.springframework.dao.TransientDataAccessException
+
+security:
+  jwt:
+    secret: ${SECURITY_JWT_SECRET}
+  internal:
+    service-token: ${INTERNAL_SERVICE_TOKEN}

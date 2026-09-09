@@ -84,12 +84,45 @@ def parse_hey(output: str) -> dict[str, Any]:
 
     statuses = {status: int(count) for status, count in STATUS_RE.findall(output)}
     metrics["status_codes"] = statuses
-    total_responses = sum(statuses.values())
-    error_responses = sum(count for status, count in statuses.items() if not status.startswith("2"))
-    metrics["total_responses"] = total_responses
-    metrics["error_responses"] = error_responses
-    metrics["error_rate_percent"] = round((error_responses / total_responses) * 100, 4) if total_responses else None
+    status_responses = sum(statuses.values())
+
+    # A request that never got a response has no status code, so counting only the status
+    # distribution reports a connection-refused or timed-out run as flawless. hey lists
+    # those separately under "Error distribution".
+    transport_errors = {
+        message.strip(): int(count)
+        for count, message in re.findall(r"\[(\d+)\]\s+(.+)", _section(output, "Error distribution"))
+    }
+    metrics["transport_errors"] = transport_errors
+    transport_error_count = sum(transport_errors.values())
+
+    status_errors = sum(count for status, count in statuses.items() if not status.startswith("2"))
+    observed = status_responses + transport_error_count
+    metrics["status_responses"] = status_responses
+    metrics["transport_error_responses"] = transport_error_count
+    metrics["observed_responses"] = observed
+    metrics["error_responses"] = status_errors + transport_error_count
+    metrics["error_rate_percent"] = (
+        round((metrics["error_responses"] / observed) * 100, 4) if observed else None
+    )
+
+    # hey caps its detailed status and latency samples (one million by default) while
+    # Requests/sec still reflects every request sent. When the two disagree, the error rate
+    # above is a rate over the sample, not over the run, and must be labelled as such.
+    estimated = metrics.get("estimated_total_requests")
+    metrics["sampling_complete"] = estimated is None or abs(estimated - observed) <= max(1, estimated * 0.01)
+    if not metrics["sampling_complete"]:
+        metrics["sampling_note"] = (
+            f"hey reported detail for {observed} responses but the run sent about {estimated}; "
+            "latency percentiles and the error rate describe the sampled subset only"
+        )
     return metrics
+
+
+def _section(output: str, heading: str) -> str:
+    """The block of lines following a hey heading, up to the next blank-line-separated block."""
+    match = re.search(rf"^{re.escape(heading)}:\n(.*?)(?:\n\n|\Z)", output, re.MULTILINE | re.DOTALL)
+    return match.group(1) if match else ""
 
 
 def run_hey(url: str, concurrency: int, duration: str | None = None, requests: int | None = None) -> dict[str, Any]:
