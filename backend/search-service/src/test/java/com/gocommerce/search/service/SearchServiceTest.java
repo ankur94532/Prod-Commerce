@@ -337,7 +337,7 @@ class SearchServiceTest {
     }
 
     @Test
-    void search_usesVectorQuery_whenModeIsVector() {
+    void search_usesIndexedKnnQuery_whenModeIsVector() {
         ProductSearchRepository repo = mock(ProductSearchRepository.class);
         SearchCache cache = mock(SearchCache.class);
         ElasticsearchOperations elasticsearchOperations = mock(ElasticsearchOperations.class);
@@ -375,8 +375,62 @@ class SearchServiceTest {
                 ArgumentCaptor.forClass(org.springframework.data.elasticsearch.core.query.Query.class);
         verify(elasticsearchOperations).search(queryCaptor.capture(), eq(ProductDocument.class));
         NativeQuery nativeQuery = (NativeQuery) queryCaptor.getValue();
-        assertThat(nativeQuery.getQuery().isScriptScore()).isTrue();
+        assertThat(nativeQuery.getQuery()).isNull();
+        assertThat(nativeQuery.getKnnQuery()).isNotNull();
+        assertThat(nativeQuery.getKnnQuery().field()).isEqualTo("searchEmbedding");
+        assertThat(nativeQuery.getKnnQuery().numCandidates()).isEqualTo(100L);
         verify(cache).put(eq(req), any(SearchResponse.class));
+    }
+
+    @Test
+    void search_keepsExactScriptScoreAsAComparisonMode() {
+        ProductSearchRepository repo = mock(ProductSearchRepository.class);
+        SearchCache cache = mock(SearchCache.class);
+        ElasticsearchOperations elasticsearchOperations = mock(ElasticsearchOperations.class);
+        ProductEmbeddingService embeddingService = mock(ProductEmbeddingService.class);
+        SearchService service = new SearchService(repo, cache, null, elasticsearchOperations, null, embeddingService);
+
+        SearchRequest req = new SearchRequest("comfortable running shoes", null, "vector_exact", 0, 20);
+        when(cache.get(req)).thenReturn(Optional.empty());
+        when(embeddingService.embed(req.query())).thenReturn(testVector());
+        when(elasticsearchOperations.search(
+                any(org.springframework.data.elasticsearch.core.query.Query.class),
+                eq(ProductDocument.class)))
+                .thenReturn(searchHits(new ProductDocument(
+                        "p3", "running-shoes", "Road Running Shoes", "shoes",
+                        new BigDecimal("6999"), "INR", List.of(), null), 1));
+
+        SearchResponse result = service.search(req);
+
+        ArgumentCaptor<org.springframework.data.elasticsearch.core.query.Query> queryCaptor =
+                ArgumentCaptor.forClass(org.springframework.data.elasticsearch.core.query.Query.class);
+        verify(elasticsearchOperations).search(queryCaptor.capture(), eq(ProductDocument.class));
+        NativeQuery nativeQuery = (NativeQuery) queryCaptor.getValue();
+        assertThat(nativeQuery.getKnnQuery()).isNull();
+        assertThat(nativeQuery.getQuery().isScriptScore()).isTrue();
+        assertThat(result.retrieval().algorithm()).isEqualTo("exact_cosine");
+    }
+
+    @Test
+    void search_expandsAnnCandidatesForDeepPages() {
+        var cache = mock(SearchCache.class);
+        var operations = mock(ElasticsearchOperations.class);
+        var embedding = mock(ProductEmbeddingService.class);
+        var service = new SearchService(mock(ProductSearchRepository.class), cache, null, operations, null, embedding);
+        var request = new SearchRequest("shoes", null, "vector", 9, 20);
+        when(cache.get(request)).thenReturn(Optional.empty());
+        when(embedding.embed(request.query())).thenReturn(testVector());
+        when(operations.search(any(org.springframework.data.elasticsearch.core.query.Query.class), eq(ProductDocument.class)))
+                .thenReturn(searchHits(new ProductDocument(
+                        "p3", "running-shoes", "Road Running Shoes", "shoes",
+                        new BigDecimal("6999"), "INR", List.of(), null), 1));
+
+        service.search(request);
+
+        var queryCaptor = ArgumentCaptor.forClass(org.springframework.data.elasticsearch.core.query.Query.class);
+        verify(operations).search(queryCaptor.capture(), eq(ProductDocument.class));
+        var nativeQuery = (NativeQuery) queryCaptor.getValue();
+        assertThat(nativeQuery.getKnnQuery().numCandidates()).isEqualTo(200L);
     }
 
     @Test

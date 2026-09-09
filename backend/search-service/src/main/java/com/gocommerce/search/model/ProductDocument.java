@@ -70,7 +70,8 @@ public class ProductDocument {
     @Field(type = FieldType.Text)
     private String searchText;
 
-    @Field(type = FieldType.Dense_Vector, dims = SEARCH_EMBEDDING_DIMENSIONS)
+    @Field(type = FieldType.Dense_Vector, dims = SEARCH_EMBEDDING_DIMENSIONS,
+            index = true, similarity = "cosine")
     private List<Float> searchEmbedding;
 
     @Field(type = FieldType.Long)

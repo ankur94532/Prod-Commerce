@@ -28,6 +28,8 @@ search:
   http:
     connect-timeout: ${SEARCH_HTTP_CONNECT_TIMEOUT:2s}
     read-timeout: ${SEARCH_HTTP_READ_TIMEOUT:5s}
+  ann:
+    num-candidates: ${SEARCH_ANN_NUM_CANDIDATES:100}
   hybrid:
     keyword-weight: ${SEARCH_HYBRID_KEYWORD_WEIGHT:1.0}
     vector-weight: ${SEARCH_HYBRID_VECTOR_WEIGHT:1.5}

@@ -66,6 +66,19 @@ class SearchRetrievalElasticsearchTest {
         indexOps.refresh();
     }
     @AfterAll void removeFixtureIndex() { operations.indexOps(index).delete(); }
+
+    @Test void denseVectorMappingEnablesCosineHnswIndexing() {
+        var mapping = operations.indexOps(index).getMapping();
+        @SuppressWarnings("unchecked")
+        var properties = (Map<String, Object>) mapping.get("properties");
+        @SuppressWarnings("unchecked")
+        var embedding = (Map<String, Object>) properties.get("searchEmbedding");
+        assertThat(embedding)
+                .containsEntry("type", "dense_vector")
+                .containsEntry("dims", ProductDocument.SEARCH_EMBEDDING_DIMENSIONS)
+                .containsEntry("index", true)
+                .containsEntry("similarity", "cosine");
+    }
     @BeforeEach void setupService() {
         // Route production-built queries to a unique test index; never use/delete the products index.
         var routed = mock(ElasticsearchOperations.class);
@@ -85,14 +98,14 @@ class SearchRetrievalElasticsearchTest {
                 "black", "over-ear", "regular", "128GB", "8GB", "mesh", sort, mode, page, size);
     }
 
-    @ParameterizedTest @ValueSource(strings = {"text", "vector", "hybrid", "hybrid_rrf"})
+    @ParameterizedTest @ValueSource(strings = {"text", "vector", "vector_exact", "hybrid", "hybrid_rrf"})
     void explicitFiltersAreIdenticalAcrossRetrievalModes(String mode) {
         var result = service.search(request(mode, "relevance", 0, 20));
         assertThat(result.items()).extracting(SearchResultItem::id).containsExactlyInAnyOrder("1", "2");
         assertThat(result.retrieval().mode()).isEqualTo(mode);
     }
 
-    @ParameterizedTest @ValueSource(strings = {"text", "vector", "hybrid"})
+    @ParameterizedTest @ValueSource(strings = {"text", "vector", "vector_exact", "hybrid"})
     void priceSortIsHonoredEvenWhenVectorScoringDisagrees(String mode) {
         var ascending = service.search(request(mode, "price_asc", 0, 20));
         var descending = service.search(request(mode, "price_desc", 0, 20));
@@ -126,6 +139,17 @@ class SearchRetrievalElasticsearchTest {
         var result = service.search(new SearchRequest("audio", "absent-category", "vector", 0, 20));
         assertThat(result.items()).isEmpty();
         assertThat(result.total()).isZero();
-        assertThat(result.retrieval().algorithm()).isEqualTo("exact_cosine");
+        assertThat(result.retrieval().algorithm()).isEqualTo("hnsw_cosine");
+        assertThat(result.retrieval().totalRelation()).isEqualTo("ann_candidates");
+    }
+
+    @Test void annAndExactVectorModesCanBeComparedOnTheSameFilters() {
+        var ann = service.search(request("vector", "relevance", 0, 20));
+        var exact = service.search(request("vector_exact", "relevance", 0, 20));
+
+        assertThat(ann.items()).extracting(SearchResultItem::id).containsExactly("1", "2");
+        assertThat(exact.items()).extracting(SearchResultItem::id).containsExactly("1", "2");
+        assertThat(ann.retrieval().algorithm()).isEqualTo("hnsw_cosine");
+        assertThat(exact.retrieval().algorithm()).isEqualTo("exact_cosine");
     }
 }

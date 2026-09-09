@@ -13,6 +13,7 @@ import com.gocommerce.search.dto.SearchDtos.SearchResultItem;
 import com.gocommerce.search.metrics.SearchMetrics;
 import com.gocommerce.search.model.ProductDocument;
 import com.gocommerce.search.repository.ProductSearchRepository;
+import co.elastic.clients.elasticsearch._types.KnnQuery;
 import co.elastic.clients.elasticsearch._types.ScriptLanguage;
 import co.elastic.clients.elasticsearch._types.SortOptions;
 import co.elastic.clients.elasticsearch._types.SortOrder;
@@ -186,7 +187,7 @@ public class SearchService {
         }
 
         if (query == null || query.isBlank()) {
-            return new SearchResponse(List.of(), 0, page, size, 0, retrievalInfo(mode));
+            return new SearchResponse(List.of(), 0, page, size, 0, retrievalInfo(mode, page, size));
         }
 
         // normalize for cache key
@@ -209,7 +210,7 @@ public class SearchService {
                 size);
 
         var cached = searchCache.get(normalizedRequest);
-        if (cached.isPresent() && retrievalInfo(mode).equals(cached.get().retrieval())) {
+        if (cached.isPresent() && retrievalInfo(normalizedRequest).equals(cached.get().retrieval())) {
             if (searchMetrics != null) {
                 searchMetrics.recordCachedSearch();
             }
@@ -273,7 +274,7 @@ public class SearchService {
 
         long total = searchHits.getTotalHits();
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
-        SearchResponse response = new SearchResponse(items, total, page, size, totalPages, retrievalInfo(normalizedRequest.mode()));
+        SearchResponse response = new SearchResponse(items, total, page, size, totalPages, retrievalInfo(normalizedRequest));
         searchCache.put(normalizedRequest, response);
 
         return response;
@@ -370,7 +371,7 @@ public class SearchService {
 
         long total = searchHits.getTotalHits();
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
-        SearchResponse response = new SearchResponse(items, total, page, size, totalPages, retrievalInfo(normalizedRequest.mode()));
+        SearchResponse response = new SearchResponse(items, total, page, size, totalPages, retrievalInfo(normalizedRequest));
         searchCache.put(normalizedRequest, response);
 
         return response;
@@ -383,14 +384,18 @@ public class SearchService {
 
         validateQueryVector(queryVector);
 
+        var queryBuilder = NativeQuery.builder()
+                .withSort(sortOptions(normalizedRequest.sort()))
+                .withPageable(PageRequest.of(page, size))
+                .withTrackTotalHits(true);
+        if ("vector_exact".equals(normalizedRequest.mode())) {
+            queryBuilder.withQuery(buildExactVectorQuery(normalizedRequest, queryVector));
+        } else {
+            queryBuilder.withKnnQuery(buildAnnVectorQuery(normalizedRequest, queryVector, page, size));
+        }
+
         SearchHits<ProductDocument> searchHits = elasticsearchOperations.search(
-                NativeQuery.builder()
-                        .withQuery(buildVectorQuery(normalizedRequest, queryVector))
-                        .withSort(sortOptions(normalizedRequest.sort()))
-                        .withPageable(PageRequest.of(page, size))
-                        .withTrackTotalHits(true)
-                        .build(),
-                ProductDocument.class);
+                queryBuilder.build(), ProductDocument.class);
 
         List<SearchResultItem> items = searchHits.getSearchHits().stream()
                 .map(SearchHit::getContent)
@@ -403,13 +408,13 @@ public class SearchService {
 
         long total = searchHits.getTotalHits();
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
-        SearchResponse response = new SearchResponse(items, total, page, size, totalPages, retrievalInfo(normalizedRequest.mode()));
+        SearchResponse response = new SearchResponse(items, total, page, size, totalPages, retrievalInfo(normalizedRequest));
         searchCache.put(normalizedRequest, response);
 
         return response;
     }
 
-    private Query buildVectorQuery(SearchRequest request, List<Float> queryVector) {
+    private Query buildExactVectorQuery(SearchRequest request, List<Float> queryVector) {
         List<Query> filters = buildFilters(request);
         filters.add(Query.of(q -> q.exists(e -> e.field("searchEmbedding"))));
 
@@ -424,6 +429,15 @@ public class SearchService {
                         .lang(ScriptLanguage.Painless)
                         .source("cosineSimilarity(params.queryVector, 'searchEmbedding') + 1.0")
                         .params("queryVector", JsonData.of(queryVector))))));
+    }
+
+    private KnnQuery buildAnnVectorQuery(SearchRequest request, List<Float> queryVector, int page, int size) {
+        List<Query> filters = buildFilters(request);
+        return KnnQuery.of(knn -> knn
+                .field("searchEmbedding")
+                .queryVector(queryVector)
+                .numCandidates((long) annCandidates(page, size))
+                .filter(filters));
     }
 
     private Query buildHybridQuery(SearchRequest request, List<Float> queryVector) {
@@ -978,12 +992,13 @@ public class SearchService {
         if ("vector".equalsIgnoreCase(normalized) || "semantic".equalsIgnoreCase(normalized)) {
             return "vector";
         }
+        if ("vector_exact".equalsIgnoreCase(normalized)) return "vector_exact";
         if ("hybrid_rrf".equalsIgnoreCase(normalized)) return "hybrid_rrf";
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported retrieval mode");
     }
 
     private static boolean isVectorMode(String value) {
-        return "vector".equalsIgnoreCase(value);
+        return "vector".equalsIgnoreCase(value) || "vector_exact".equalsIgnoreCase(value);
     }
 
     private static boolean isHybridMode(String value) {
@@ -998,15 +1013,26 @@ public class SearchService {
         }
     }
 
-    private RetrievalInfo retrievalInfo(String mode) {
+    private RetrievalInfo retrievalInfo(SearchRequest request) {
+        return retrievalInfo(request.mode(), request.page(), request.size());
+    }
+
+    private RetrievalInfo retrievalInfo(String mode, int page, int size) {
         return switch (mode) {
-            case "hybrid_rrf" -> new RetrievalInfo(mode, "rrf_union_exact_vector", "candidate_union",
+            case "hybrid_rrf" -> new RetrievalInfo(mode, "rrf_union_hnsw_vector", "candidate_union",
                     searchProperties.getRrf().getCandidateWindow(), searchProperties.getRrf().getRankConstant(), 0, 0);
-            case "vector" -> new RetrievalInfo(mode, "exact_cosine", "exact", 0, 0, 0, 1);
+            case "vector" -> new RetrievalInfo(mode, "hnsw_cosine", "ann_candidates",
+                    annCandidates(page, size), 0, 0, 1);
+            case "vector_exact" -> new RetrievalInfo(mode, "exact_cosine", "exact", 0, 0, 0, 1);
             case "hybrid" -> new RetrievalInfo(mode, "lexically_gated_weighted_cosine", "exact", 0, 0,
                     searchProperties.getHybrid().getKeywordWeight(), searchProperties.getHybrid().getVectorWeight());
             default -> new RetrievalInfo("text", "lexical_with_rules", "exact", 0, 0, 1, 0);
         };
+    }
+
+    private int annCandidates(int page, int size) {
+        long requestedWindow = ((long) page + 1) * size;
+        return (int) Math.min(10000, Math.max(searchProperties.getAnn().getNumCandidates(), requestedWindow));
     }
 
     private SearchResponse doRrfSearchAndCache(SearchRequest request) {
@@ -1017,7 +1043,8 @@ public class SearchService {
         // Independent retrieval with identical filters. Vector-only candidates can enter the union.
         var lexical = elasticsearchOperations.search(NativeQuery.builder().withQuery(buildSearchQuery(request))
                 .withPageable(PageRequest.of(0, window)).withSort(sortOptions(null)).build(), ProductDocument.class);
-        var semantic = elasticsearchOperations.search(NativeQuery.builder().withQuery(buildVectorQuery(request, vector))
+        var semantic = elasticsearchOperations.search(NativeQuery.builder()
+                .withKnnQuery(buildAnnVectorQuery(request, vector, 0, window))
                 .withPageable(PageRequest.of(0, window)).withSort(sortOptions(null)).build(), ProductDocument.class);
         var documents = new java.util.HashMap<String, ProductDocument>();
         var scores = new java.util.HashMap<String, Double>();
@@ -1040,7 +1067,7 @@ public class SearchService {
         var items = rankedIds.stream().skip((long) page * size).limit(size)
                 .map(documents::get).map(this::toResultItem).toList();
         int total = rankedIds.size();
-        var response = new SearchResponse(items, total, page, size, (total + size - 1) / size, retrievalInfo(request.mode()));
+        var response = new SearchResponse(items, total, page, size, (total + size - 1) / size, retrievalInfo(request));
         if (searchMetrics != null && items.isEmpty()) searchMetrics.incrementZeroResult();
         searchCache.put(request, response);
         return response;

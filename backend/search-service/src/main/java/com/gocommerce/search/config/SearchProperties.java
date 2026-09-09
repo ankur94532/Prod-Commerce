@@ -9,6 +9,9 @@ public class SearchProperties {
     private final Rrf rrf = new Rrf();
     public Rrf getRrf() { return rrf; }
 
+    private final Ann ann = new Ann();
+    public Ann getAnn() { return ann; }
+
     private final Indexing indexing = new Indexing();
 
     public Hybrid getHybrid() {
@@ -52,6 +55,21 @@ public class SearchProperties {
         public void setRankConstant(int value) {
             if (value < 1) throw new IllegalArgumentException("RRF rank constant must be positive");
             rankConstant = value;
+        }
+    }
+
+    public static class Ann {
+        private int numCandidates = 100;
+
+        public int getNumCandidates() {
+            return numCandidates;
+        }
+
+        public void setNumCandidates(int numCandidates) {
+            if (numCandidates < 1 || numCandidates > 10000) {
+                throw new IllegalArgumentException("ANN num-candidates must be 1–10000");
+            }
+            this.numCandidates = numCandidates;
         }
     }
 

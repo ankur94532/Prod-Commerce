@@ -1,9 +1,8 @@
 # Search phase handoff — updated 2026-09-09
 
 Read `docs/RELIABILITY-HANDOFF.md` first for the overall plan, the completed checkout phase,
-and its limits. All work remains uncommitted. Preserve preexisting `docs/interview-prep/`
-and all checkout changes. No AGENTS.md was found; recheck. No deployment, publishing, or
-resume rewrite is authorized.
+and its limits. Preserve preexisting `docs/interview-prep/`. Nothing described here has
+been deployed.
 
 ## Status
 
@@ -15,8 +14,8 @@ Verified locally, all passing:
 
 | Suite | Command | Result |
 | --- | --- | --- |
-| Elasticsearch retrieval contracts | `ops/testing/search-retrieval.sh` | 10 executions, 0 skipped |
-| search-service unit and API | `mvn -f backend/pom.xml -pl search-service test` | 31 tests (26 run + 5 ES cases skipped without the env var) |
+| Elasticsearch retrieval contracts | `ops/testing/search-retrieval.sh` | 22 executions, 0 skipped |
+| search-service unit and API | `mvn -f backend/pom.xml -pl search-service -am test` | 53 search tests (38 run + 15 Docker-gated skips) |
 | Graded-evaluation harness | `ops/testing/search-evaluation.sh` | 104 tests, 0 skipped |
 
 The earlier `SearchRetrievalElasticsearchTest` compile failure (ambiguous
@@ -27,10 +26,12 @@ to `…core.query.Query`. That suite has now run green against a disposable
 ## Search service changes
 
 `service/SearchService.java`
-- Requested field sorting is preserved in `text`, `vector`, and `hybrid`; ties break on
+- Requested field sorting is preserved in `text`, `vector`, `vector_exact`, and `hybrid`; ties break on
   score, then productId, then slug.
+- `vector` uses the indexed cosine HNSW graph with a configurable candidate budget;
+  `vector_exact` preserves the old full-scan cosine script as an explicit comparison mode.
 - Default `hybrid` stays the lexically gated weighted-cosine baseline (unchanged behavior).
-- New experimental `hybrid_rrf`: independent lexical and exact-vector queries over shared
+- New experimental `hybrid_rrf`: independent lexical and HNSW-vector queries over shared
   filters, bounded candidate windows, reciprocal rank fusion, deterministic dedup and
   pagination over one stable union. Accepts relevance sort only.
 - Unsupported mode/sort and invalid price range return 400. Dependency failure returns 503
@@ -41,8 +42,9 @@ to `…core.query.Query`. That suite has now run green against a disposable
 
 `dto/SearchDtos.java` adds `RetrievalInfo` (mode, algorithm, totalRelation, candidateWindow,
 rrfRankConstant, keywordWeight, vectorWeight) and an optional `SearchResponse.retrieval`,
-keeping the old constructors. `config/SearchProperties.java` adds the RRF window (default
-100, max 1000) and rank constant (default 60). `application.yml` wires those and makes the
+keeping the old constructors. `config/SearchProperties.java` adds the ANN candidate budget
+(default 100, max 10,000), RRF window (default 100, max 1000), and rank constant (default 60).
+`application.yml` wires those and makes the
 circuit breaker ignore `ResponseStatusException` — **review whether ignoring every status,
 including the 503 from an invalid vector, is what you want.**
 
@@ -111,11 +113,12 @@ healthy. See [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
 
 ## Operational cautions
 
-- Reindex still deletes and recreates the active index. Durable indexing and atomic aliases
-  are later work; inactive products can still remain searchable.
-- Vector retrieval is exact script scoring, not ANN. The RRF candidate window bounds
-  candidates per branch, not documents scanned; its `total` is candidate-union size, not an
-  exact full-corpus match count.
+- Reindexing builds a timestamped physical index and atomically swaps the `products` alias;
+  inactive-product lifecycle remains a separate concern.
+- `vector` and the semantic branch of `hybrid_rrf` use approximate HNSW retrieval.
+  `vector_exact` remains available for controlled comparisons, and weighted `hybrid` still
+  script-scores every document that passes its lexical gate. ANN/RRF totals describe bounded
+  candidates, not an exact full-corpus match count.
 - Inferred category filters remain active in all retrieval modes and can constrain semantic
   recall — worth an ablation once judgments exist.
 - Checkout evidence is unchanged: 24 PostgreSQL, 57 backend unit/API, 10 frontend tests.
