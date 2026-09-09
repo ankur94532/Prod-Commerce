@@ -48,7 +48,7 @@ public class OrderWorkflow {
             // Keyed on the order, so the retry policy on this call cannot charge twice.
             PaymentResult result = payment.charge(new PaymentChargeRequest(
                     chargeKey(order), order.getTotalAmount(), order.getCurrency(),
-                    details == null ? null : details.cardNumber(), "Order " + order.getId()));
+                    details == null ? null : details.paymentToken(), "Order " + order.getId()));
             if (!result.success()) {
                 throw new IllegalStateException("Payment declined");
             }

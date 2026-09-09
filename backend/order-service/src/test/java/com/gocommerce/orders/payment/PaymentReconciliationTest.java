@@ -24,14 +24,14 @@ class PaymentReconciliationTest {
 
     private final MockStripePaymentProvider provider = new MockStripePaymentProvider();
 
-    private PaymentChargeRequest charge(String key, String card) {
-        return new PaymentChargeRequest(key, new BigDecimal("100.00"), "INR", card, "Order test");
+    private PaymentChargeRequest charge(String key, String token) {
+        return new PaymentChargeRequest(key, new BigDecimal("100.00"), "INR", token, "Order test");
     }
 
     @Test
     void repeatingAChargeWithTheSameKeyReturnsTheOriginalResultRatherThanChargingAgain() {
-        PaymentResult first = provider.charge(charge("order:1:charge", "4242424242424242"));
-        PaymentResult second = provider.charge(charge("order:1:charge", "4242424242424242"));
+        PaymentResult first = provider.charge(charge("order:1:charge", "pm_ok_abcdef123456"));
+        PaymentResult second = provider.charge(charge("order:1:charge", "pm_ok_abcdef123456"));
 
         assertThat(first.success()).isTrue();
         assertThat(second.transactionId()).isEqualTo(first.transactionId());
@@ -42,7 +42,7 @@ class PaymentReconciliationTest {
         ExecutorService pool = Executors.newFixedThreadPool(8);
         try {
             List<Callable<PaymentResult>> attempts = IntStream.range(0, 8)
-                    .<Callable<PaymentResult>>mapToObj(i -> () -> provider.charge(charge("order:2:charge", "4242424242424242")))
+                    .<Callable<PaymentResult>>mapToObj(i -> () -> provider.charge(charge("order:2:charge", "pm_ok_abcdef123456")))
                     .toList();
 
             Set<String> transactionIds = new HashSet<>();
@@ -60,22 +60,28 @@ class PaymentReconciliationTest {
 
     @Test
     void aDifferentOrderGetsItsOwnCharge() {
-        PaymentResult first = provider.charge(charge("order:3:charge", "4242424242424242"));
-        PaymentResult second = provider.charge(charge("order:4:charge", "4242424242424242"));
+        PaymentResult first = provider.charge(charge("order:3:charge", "pm_ok_abcdef123456"));
+        PaymentResult second = provider.charge(charge("order:4:charge", "pm_ok_abcdef123456"));
 
         assertThat(second.transactionId()).isNotEqualTo(first.transactionId());
     }
 
     @Test
+    void aChargeWithoutATokenIsRefused() {
+        assertThat(provider.charge(charge("order:9:charge", null)).success()).isFalse();
+        assertThat(provider.charge(charge("order:10:charge", "  ")).success()).isFalse();
+    }
+
+    @Test
     void aChargeWithoutAnIdempotencyKeyIsRefusedRatherThanRisked() {
-        assertThat(provider.charge(charge(null, "4242424242424242")).success()).isFalse();
-        assertThat(provider.charge(charge("  ", "4242424242424242")).success()).isFalse();
+        assertThat(provider.charge(charge(null, "pm_ok_abcdef123456")).success()).isFalse();
+        assertThat(provider.charge(charge("  ", "pm_ok_abcdef123456")).success()).isFalse();
     }
 
     @Test
     void replayingADeclineDoesNotTurnItIntoACharge() {
-        PaymentResult declined = provider.charge(charge("order:5:charge", "4000000000000000"));
-        PaymentResult replayed = provider.charge(charge("order:5:charge", "4242424242424242"));
+        PaymentResult declined = provider.charge(charge("order:5:charge", "pm_decline_abcdef12"));
+        PaymentResult replayed = provider.charge(charge("order:5:charge", "pm_ok_abcdef123456"));
 
         assertThat(declined.success()).isFalse();
         assertThat(replayed.success()).isFalse();
@@ -84,7 +90,7 @@ class PaymentReconciliationTest {
 
     @Test
     void aSuccessfulChargeCanBeLookedUpAfterALostResponse() {
-        PaymentResult result = provider.charge(charge("order:6:charge", "4242424242424242"));
+        PaymentResult result = provider.charge(charge("order:6:charge", "pm_ok_abcdef123456"));
 
         Optional<PaymentResult> found = provider.lookup("order:6:charge");
 
@@ -101,7 +107,7 @@ class PaymentReconciliationTest {
 
     @Test
     void refundsAreIdempotentToo() {
-        PaymentResult charged = provider.charge(charge("order:7:charge", "4242424242424242"));
+        PaymentResult charged = provider.charge(charge("order:7:charge", "pm_ok_abcdef123456"));
         PaymentRefundRequest request = new PaymentRefundRequest(
                 "order:7:refund", charged.transactionId(), new BigDecimal("100.00"), "INR", "could not fulfil");
 

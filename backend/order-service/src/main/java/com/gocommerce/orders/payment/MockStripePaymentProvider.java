@@ -15,9 +15,10 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * A mock. It does not move money and it is not a payment integration.
  *
- * <p>What it does model faithfully is the part the order workflow depends on: the provider
- * remembers idempotency keys, so a retried charge returns the original result instead of
- * charging again, and a charge can be looked up after a lost response.
+ * <p>What it does model faithfully is the part the order workflow depends on: it charges a
+ * token rather than a card, it remembers idempotency keys so a retried charge returns the
+ * original result instead of charging again, and a charge can be looked up after a lost
+ * response.
  *
  * <p>Its memory is a map in this JVM. A real provider's record is shared and durable, so
  * this mock is weaker than the thing it stands in for in exactly one direction: with more
@@ -45,8 +46,8 @@ public class MockStripePaymentProvider implements PaymentProvider {
         if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
             return PaymentResult.failure(PROVIDER, "Invalid amount");
         }
-        if (request.cardNumber() == null || request.cardNumber().isBlank()) {
-            return PaymentResult.failure(PROVIDER, "Missing card number");
+        if (request.paymentToken() == null || request.paymentToken().isBlank()) {
+            return PaymentResult.failure(PROVIDER, "Missing payment token");
         }
         // Claiming the key must be atomic. Reading, deciding, then writing lets concurrent
         // retries of one order each pass the check and bill the customer several times.
@@ -55,9 +56,9 @@ public class MockStripePaymentProvider implements PaymentProvider {
 
     private PaymentResult settle(PaymentChargeRequest request) {
 
-        // Test-card rule: a number ending in 0000 is declined, anything else succeeds.
-        String normalized = request.cardNumber().replaceAll("\\s+", "");
-        boolean declined = normalized.endsWith("0000");
+        // The processor decides acceptance from the token; the card that produced it is
+        // never visible here. A token minted from a declining test card carries the prefix.
+        boolean declined = request.paymentToken().startsWith("pm_decline");
 
         try {
             Thread.sleep(200); // simulated round-trip
@@ -66,7 +67,7 @@ public class MockStripePaymentProvider implements PaymentProvider {
         }
 
         if (declined) {
-            log.warn("MockStripe: declining the card ending 0000");
+            log.warn("MockStripe: declining token {}", request.paymentToken());
             // The decline is recorded too: replaying the key must not turn it into a charge.
             return PaymentResult.failure(PROVIDER, "Card declined (mock)");
         }

@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/authContextValue.js";
+import { tokenizeCard, PaymentTokenizationError } from "../payments/processor";
 import { getCart, clearCart } from "../api/cart";
 import { createOrder, fetchCheckoutAttempt } from "../api/orders";
 import { submitCheckout, inspectAttempt, startNewAttempt, cleanupPaidCart } from "../checkout/attempt";
@@ -154,17 +155,22 @@ function Checkout() {
     e.preventDefault();
     setPaymentError("");
 
-    if (!cardNumber.trim() || !cardExpiry.trim() || !cardCvc.trim()) {
-      setPaymentError("Please enter full card details.");
-      return;
-    }
-
     if (submitting.current) return;
     submitting.current = true;
+    let paymentToken;
     try {
       setPlacing(true);
+      // The card is exchanged for a token in the browser and never sent to our API.
+      paymentToken = await tokenizeCard({ number: cardNumber, expiry: cardExpiry, cvc: cardCvc });
+    } catch (err) {
+      setPaymentError(err instanceof PaymentTokenizationError ? err.message : "Could not verify the card.");
+      setPlacing(false);
+      submitting.current = false;
+      return;
+    }
+    try {
       const submit = () => submitCheckout({
-        userId: user.id, items, payment: { cardNumber, cardExpiry, cardCvc },
+        userId: user.id, items, payment: { paymentToken },
         storage: localStorage, createOrder, clearCart, uuid: () => crypto.randomUUID(),
       });
       if (!navigator.locks) throw new Error("Checkout requires a browser supporting Web Locks.");

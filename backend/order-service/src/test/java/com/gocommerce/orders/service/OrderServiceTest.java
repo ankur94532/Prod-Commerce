@@ -21,7 +21,7 @@ class OrderServiceTest {
 
     @Test void fingerprintIgnoresDisplayFieldsAndPaymentButIncludesQuantity() {
         var first = new CreateOrderRequest("u", List.of(new CreateOrderItemRequest("1", "name", 1, null)), null);
-        var same = new CreateOrderRequest("u", List.of(new CreateOrderItemRequest("1", "changed", 1, null)), new PaymentDetails("card", "expiry", "cvc"));
+        var same = new CreateOrderRequest("u", List.of(new CreateOrderItemRequest("1", "changed", 1, null)), new PaymentDetails("pm_ok_abcdef123456"));
         var changed = new CreateOrderRequest("u", List.of(new CreateOrderItemRequest("1", null, 2, null)), null);
         assertEquals(OrderService.hashRequest(first), OrderService.hashRequest(same));
         assertNotEquals(OrderService.hashRequest(first), OrderService.hashRequest(changed));

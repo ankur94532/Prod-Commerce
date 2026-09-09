@@ -74,9 +74,7 @@ class OrderControllerTest {
                     }
                   ],
                   "payment": {
-                    "cardNumber": "4242424242424242",
-                    "cardExpiry": "12/30",
-                    "cardCvc": "123"
+                    "paymentToken": "pm_ok_abcdef123456"
                   }
                 }
                 """;
@@ -104,9 +102,7 @@ class OrderControllerTest {
                     }
                   ],
                   "payment": {
-                    "cardNumber": "4242424242424242",
-                    "cardExpiry": "12/30",
-                    "cardCvc": "123"
+                    "paymentToken": "pm_ok_abcdef123456"
                   }
                 }
                 """;
@@ -166,5 +162,40 @@ class OrderControllerTest {
         mockMvc.perform(get("/api/v1/orders/attempt").header("Idempotency-Key", "key"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("COMPENSATING"));
         org.mockito.Mockito.verify(orderService).findAttempt("user-123", "key");
+    }
+
+    @Test
+    @WithMockUser(username = "u1", roles = { "CUSTOMER" })
+    void cardDetailsAreRejectedAtTheApiBoundary() throws Exception {
+        // This API used to accept the card number. Anything that is not a processor token
+        // is now refused before a handler sees it, so a client cannot drag this service
+        // back into PCI scope by sending card data.
+        mockMvc.perform(post("/api/v1/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userId": "u1",
+                                  "items": [{"productId": "1", "quantity": 1}],
+                                  "payment": { "paymentToken": "4242424242424242" }
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(username = "u1", roles = { "CUSTOMER" })
+    void theRejectionNeverEchoesTheValueItRefused() throws Exception {
+        String response = mockMvc.perform(post("/api/v1/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userId": "u1",
+                                  "items": [{"productId": "1", "quantity": 1}],
+                                  "payment": { "paymentToken": "4242424242424242" }
+                                }
+                                """))
+                .andReturn().getResponse().getContentAsString();
+
+        org.assertj.core.api.Assertions.assertThat(response).doesNotContain("4242424242424242");
     }
 }

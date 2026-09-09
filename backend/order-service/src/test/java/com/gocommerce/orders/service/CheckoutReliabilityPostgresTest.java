@@ -80,7 +80,7 @@ class CheckoutReliabilityPostgresTest {
     }
     CreateOrderRequest request(int quantity) {
         return new CreateOrderRequest("u", List.of(new CreateOrderItemRequest("1", "Tampered", quantity, BigDecimal.ONE),
-                new CreateOrderItemRequest("2", null, 1, null)), new PaymentDetails("4242424242424242", "12/30", "123"));
+                new CreateOrderItemRequest("2", null, 1, null)), new PaymentDetails("pm_ok_abcdef123456"));
     }
     int count(String table) { return jdbc.queryForObject("SELECT count(*) FROM " + table, Integer.class); }
     String status() { return jdbc.queryForObject("SELECT status FROM orders", String.class); }
