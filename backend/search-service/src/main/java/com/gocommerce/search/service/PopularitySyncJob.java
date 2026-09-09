@@ -47,9 +47,9 @@ public class PopularitySyncJob {
             }
 
             productSearchRepository.findById(productId).ifPresent(doc -> {
-                Long score = item.totalQuantity(); // simplicity: popularity = totalQuantity
-                if (score == null) score = 0L;
-                doc.setPopularityScore(score);
+                // totalQuantity is a primitive, so it is never null; the previous null check
+                // boxed it only to compare the result against null, which is always false.
+                doc.setPopularityScore(item.totalQuantity());
                 docsToSave.add(doc);
             });
         }

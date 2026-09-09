@@ -90,6 +90,8 @@ public class Order {
 
     public int getWorkflowVersion() { return workflowVersion; }
     public int getRecoveryAttempts() { return recoveryAttempts; }
+    /** When recovery may next attempt this order; null once it reaches a terminal state. */
+    public Instant getNextRecoveryAt() { return nextRecoveryAt; }
     public void scheduleRecovery() {
         recoveryAttempts++;
         nextRecoveryAt = Instant.now().plusSeconds(Math.min(300, 1L << Math.min(recoveryAttempts, 8)));

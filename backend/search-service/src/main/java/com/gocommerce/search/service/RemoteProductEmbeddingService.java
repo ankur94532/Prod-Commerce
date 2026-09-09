@@ -62,7 +62,9 @@ public class RemoteProductEmbeddingService implements ProductEmbeddingService {
 
     public HealthStatus healthStatus() {
         try {
-            ResponseEntity<Map> response = restTemplate.getForEntity(baseUrl + "/health", Map.class);
+            ResponseEntity<Map<?, ?>> response = restTemplate.exchange(
+                    baseUrl + "/health", org.springframework.http.HttpMethod.GET, null,
+                    new org.springframework.core.ParameterizedTypeReference<Map<?, ?>>() {});
             Map<?, ?> body = response.getBody();
             String status = body != null && body.get("status") != null ? String.valueOf(body.get("status")) : "unknown";
             String model = body != null && body.get("model") != null ? String.valueOf(body.get("model")) : null;

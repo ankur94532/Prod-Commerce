@@ -34,6 +34,9 @@ class SearchCacheRedisTest {
     private SearchCacheRedis cache;
 
     @BeforeEach
+    // A dynamic proxy cannot carry its type arguments, so this cast is unverifiable by
+    // construction rather than by oversight.
+    @SuppressWarnings("unchecked")
     void setUp() {
         store = new Store();
         objectMapper = new ObjectMapper();

@@ -32,13 +32,6 @@ public class CartController {
         this.cartMetrics = cartMetrics;
     }
 
-    // ✅ Backwards-compatible constructor for older tests
-    @Deprecated
-    public CartController(CartService cartService) {
-        this.cartService = cartService;
-        this.cartMetrics = null; // metrics disabled in old tests
-    }
-
     private String validateAndResolveUserId(String pathUserId, AuthenticatedUser authUser) {
         if (authUser == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthenticated");

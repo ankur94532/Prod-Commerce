@@ -57,7 +57,7 @@ class CartControllerTest {
     @Test
     void getCart_usesAuthenticatedUserIdAndReturnsCart() {
         RecordingCartService service = new RecordingCartService();
-        CartController controller = new CartController(service);
+        CartController controller = new CartController(service, null);
         AuthenticatedUser auth = new AuthenticatedUser("user-1", "user@example.com", "User One", "USER");
 
         ResponseEntity<?> response = controller.getCart("user-1", auth);
@@ -72,7 +72,7 @@ class CartControllerTest {
     @Test
     void getCart_throwsUnauthorizedWhenNoPrincipal() {
         RecordingCartService service = new RecordingCartService();
-        CartController controller = new CartController(service);
+        CartController controller = new CartController(service, null);
 
         ResponseStatusException ex = assertThrows(
                 ResponseStatusException.class,
@@ -84,7 +84,7 @@ class CartControllerTest {
     @Test
     void getCart_forbiddenWhenPathUserIdDiffersFromJwt() {
         RecordingCartService service = new RecordingCartService();
-        CartController controller = new CartController(service);
+        CartController controller = new CartController(service, null);
         AuthenticatedUser auth = new AuthenticatedUser("user-1", "user@example.com", "User One", "USER");
 
         ResponseStatusException ex = assertThrows(
@@ -97,7 +97,7 @@ class CartControllerTest {
     @Test
     void addItem_callsServiceWithAuthenticatedUser() {
         RecordingCartService service = new RecordingCartService();
-        CartController controller = new CartController(service);
+        CartController controller = new CartController(service, null);
         AuthenticatedUser auth = new AuthenticatedUser("user-1", "user@example.com", "User One", "USER");
 
         AddCartItemRequest req = new AddCartItemRequest();
@@ -117,7 +117,7 @@ class CartControllerTest {
     @Test
     void clearCart_callsServiceWithAuthenticatedUser() {
         RecordingCartService service = new RecordingCartService();
-        CartController controller = new CartController(service);
+        CartController controller = new CartController(service, null);
         AuthenticatedUser auth = new AuthenticatedUser("user-1", "user@example.com", "User One", "USER");
 
         ResponseEntity<Void> response = controller.clearCart("user-1", auth);
