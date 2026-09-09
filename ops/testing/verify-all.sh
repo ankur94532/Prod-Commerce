@@ -68,6 +68,7 @@ run "Ordered deployment procedure"      ops/testing/deploy-procedure.sh
 run "Search retrieval (Elasticsearch)"  ops/testing/search-retrieval.sh
 run "Graded evaluation harness"         ops/testing/search-evaluation.sh
 run "Load-test harness"                 ops/testing/load-harness.sh
+run "Chaos drill (dependency faults)"   ops/testing/chaos-drill.sh
 run "Point-in-time recovery drill"      ops/backup/pitr-drill.sh
 run "Backup retention policy"           ops/testing/backup-retention.sh
 run "Frontend tests"                    frontend_tests

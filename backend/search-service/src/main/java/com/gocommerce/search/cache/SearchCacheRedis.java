@@ -37,7 +37,16 @@ public class SearchCacheRedis implements SearchCache {
     @Override
     public Optional<SearchResponse> get(SearchRequest request) {
         String key = buildKey(request);
-        String json = redisTemplate.opsForValue().get(key);
+        String json;
+        try {
+            json = redisTemplate.opsForValue().get(key);
+        } catch (RuntimeException e) {
+            // The cache is an optimization. If Redis is unreachable this must look like a
+            // miss, not like a failed search: a cache outage should cost latency, never
+            // availability.
+            log.warn("Search cache unavailable on read; serving from Elasticsearch: {}", e.toString());
+            return Optional.empty();
+        }
         if (json == null) {
             return Optional.empty();
         }
@@ -58,12 +67,22 @@ public class SearchCacheRedis implements SearchCache {
             redisTemplate.opsForValue().set(key, json, ttlSeconds, TimeUnit.SECONDS);
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize search cache entry for key {}: {}", key, e.getMessage());
+        } catch (RuntimeException e) {
+            log.warn("Search cache unavailable on write; result not cached: {}", e.toString());
         }
     }
 
     @Override
     public void clear() {
-        Set<String> keys = redisTemplate.keys("search:*");
+        Set<String> keys;
+        try {
+            keys = redisTemplate.keys("search:*");
+        } catch (RuntimeException e) {
+            // A rebuild must not fail because the cache could not be cleared; stale entries
+            // expire on their own.
+            log.warn("Search cache unavailable on clear; entries will expire instead: {}", e.toString());
+            return;
+        }
         if (keys == null || keys.isEmpty()) {
             return;
         }

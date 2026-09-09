@@ -31,6 +31,11 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Spring Security filters the ERROR dispatch too, so without this an
+                        // unauthenticated-looking 401 is returned for every server error. That
+                        // hides real outages: the availability alert matches 5xx, and a 401
+                        // never trips it.
+                        .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
                         .requestMatchers("/api/v1/auth/health", "/api/v1/auth/.well-known/jwks.json").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
