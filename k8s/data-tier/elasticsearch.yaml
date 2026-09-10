@@ -1,0 +1,130 @@
+# Elasticsearch: the search index.
+#
+# discovery.type=single-node means exactly what it says: one node, no replicas, and every
+# index created with number_of_replicas=0 whether it asks for it or not. A node loss loses
+# the index. That is survivable here only because the index is derivable -- search-service
+# can rebuild it from the catalog through the alias-swap reindex -- but a rebuild is minutes
+# of degraded search, not a failover.
+#
+# xpack.security is off, matching docker-compose, so the index is reachable by anything that
+# can open a socket to it. The NetworkPolicy in this directory is what limits that, and it
+# is inert on a cluster with no enforcing CNI -- ops/testing/networkpolicy-enforcement.sh
+# reports whether this one enforces. Turn security on before this holds real data.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: gocommerce
+  labels:
+    app: elasticsearch
+    app.kubernetes.io/component: data-tier
+spec:
+  clusterIP: None
+  selector:
+    app: elasticsearch
+  ports:
+    - name: http
+      port: 9200
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: gocommerce
+  labels:
+    app: elasticsearch
+    app.kubernetes.io/component: data-tier
+spec:
+  serviceName: elasticsearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+        app.kubernetes.io/component: data-tier
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: elasticsearch
+          image: docker.elastic.co/elasticsearch/elasticsearch:8.15.2
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: xpack.security.enabled
+              value: "false"
+            # The heap must stay well under the container limit: Lucene needs the rest for
+            # off-heap segment data, and a heap sized at the limit gets OOM-killed rather
+            # than garbage collected.
+            - name: ES_JAVA_OPTS
+              value: "-Xms1g -Xmx1g"
+            - name: bootstrap.memory_lock
+              value: "false"
+          ports:
+            - name: http
+              containerPort: 9200
+            - name: transport
+              containerPort: 9300
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "3Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            # Elasticsearch writes its keystore and config under /usr/share/elasticsearch,
+            # so the root filesystem cannot be read-only here without mounting several more
+            # emptyDirs over paths the image expects to own. Called out rather than left to
+            # be noticed: this container is the one exception to the posture the application
+            # deployments hold.
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health?wait_for_status=yellow&timeout=1s
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi

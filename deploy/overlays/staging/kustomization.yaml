@@ -33,6 +33,9 @@ images:
   - name: embedding-service
     newName: ghcr.io/OWNER/REPOSITORY/embedding-service
     newTag: sha-REPLACE_ME
+  - name: frontend
+    newName: ghcr.io/OWNER/REPOSITORY/frontend
+    newTag: sha-REPLACE_ME
 
 patches:
   - target:

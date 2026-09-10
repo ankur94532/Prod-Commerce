@@ -40,6 +40,14 @@ spec:
             - configMapRef:
                 name: gocommerce-config
           env:
+            # The weights are baked into the image at a pinned revision, so this points at
+            # them on disk. It used to pass only the model NAME with nothing on disk, which
+            # meant every pod start tried to download from Hugging Face into a home
+            # directory that readOnlyRootFilesystem makes unwritable -- and, had it been
+            # writable, an unpinned download would let the weights change without a deploy
+            # and silently move every search result. See backend/embedding-service/Dockerfile.
+            - name: EMBEDDING_MODEL_PATH
+              value: "/models/bge-small-en-v1.5"
             - name: EMBEDDING_MODEL_NAME
               value: "BAAI/bge-small-en-v1.5"
           resources:

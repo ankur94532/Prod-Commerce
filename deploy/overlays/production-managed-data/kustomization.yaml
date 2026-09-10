@@ -1,0 +1,127 @@
+# Production on managed data stores.
+#
+# k8s/data-tier exists so that `kubectl apply -k k8s/` starts. It is one PostgreSQL pod, one
+# Redis pod, one Elasticsearch node and one Kafka broker: a single failure domain per store,
+# no failover, and an upgrade window that stops everything at once. Shipping that to
+# production would be choosing to run four databases badly.
+#
+# This overlay is the alternative, and it does two things: it deletes those objects, and it
+# repoints every endpoint at a managed instance. Because each service already reads its own
+# <SERVICE>_DATASOURCE_URL, moving to one instance per service is a value change here rather
+# than a code change -- which is the whole reason the URLs were split.
+#
+#   1. Replace every REPLACE_ME below with your real endpoints.
+#   2. Create the per-service DB Secrets with the managed credentials (the superuser and
+#      Kafka cluster-id Secrets are no longer used; do not create them).
+#   3. kubectl apply -k deploy/overlays/production-migrations   # and wait for completion
+#   4. kubectl apply -k deploy/overlays/production-managed-data
+#
+# The endpoints are left as REPLACE_ME on purpose. A plausible-looking default here would be
+# the one value nobody re-reads before shipping.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: gocommerce
+
+resources:
+  - ../production
+
+# Everything the in-cluster data tier contributed, removed by name. Listed explicitly rather
+# than by label so that adding an object to k8s/data-tier fails loudly here -- it will still
+# be deployed, and someone has to decide whether that was intended.
+patches:
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: postgres
+  - target:
+      kind: StatefulSet
+      name: redis
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: redis
+  - target:
+      kind: StatefulSet
+      name: elasticsearch
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: elasticsearch
+  - target:
+      kind: StatefulSet
+      name: kafka
+    patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: kafka
+  # The headless Services resolved to those pods. A managed endpoint is reached by its own
+  # DNS name, set in the ConfigMap below, so these would resolve to nothing.
+  - target:
+      kind: Service
+      name: postgres
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: postgres
+  - target:
+      kind: Service
+      name: redis
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: redis
+  - target:
+      kind: Service
+      name: elasticsearch
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: elasticsearch
+  - target:
+      kind: Service
+      name: kafka
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: kafka
+
+  # Managed endpoints. One instance per service is the point of splitting these URLs;
+  # pointing all five at one host is legal here and gives up the isolation the per-service
+  # roles were created for. Patched rather than generated: gocommerce-config is a checked-in
+  # resource, and a generator cannot merge into one.
+  - target:
+      kind: ConfigMap
+      name: gocommerce-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: gocommerce-config
+      data:
+        AUTH_DATASOURCE_URL: "jdbc:postgresql://REPLACE_ME-auth.example.invalid:5432/ecom_auth?sslmode=verify-full"
+        CATALOG_DATASOURCE_URL: "jdbc:postgresql://REPLACE_ME-catalog.example.invalid:5432/ecom_catalog?sslmode=verify-full"
+        ORDER_DATASOURCE_URL: "jdbc:postgresql://REPLACE_ME-order.example.invalid:5432/ecom_order?sslmode=verify-full"
+        ANALYTICS_DATASOURCE_URL: "jdbc:postgresql://REPLACE_ME-analytics.example.invalid:5432/ecom_analytics?sslmode=verify-full"
+        RECOMMENDATION_DATASOURCE_URL: "jdbc:postgresql://REPLACE_ME-recommendation.example.invalid:5432/ecom_recommendation?sslmode=verify-full"
+        SPRING_DATA_REDIS_HOST: "REPLACE_ME-redis.example.invalid"
+        SPRING_ELASTICSEARCH_URIS: "https://REPLACE_ME-search.example.invalid:9243"
+        SPRING_KAFKA_BOOTSTRAP_SERVERS: "REPLACE_ME-kafka.example.invalid:9092"

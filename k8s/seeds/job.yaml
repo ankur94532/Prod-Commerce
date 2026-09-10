@@ -31,6 +31,19 @@ spec:
           envFrom:
             - configMapRef:
                 name: gocommerce-config
+            # The same Secrets catalog-service's Deployment carries. A Job runs the service
+            # image, so Spring builds the service's whole application context -- including
+            # SearchIndexClient, which reads INTERNAL_SERVICE_TOKEN. Without them the context
+            # fails to refresh and the seed crash-loops on an unresolved placeholder.
+            #
+            # This is the identical defect that was fixed in k8s/migrations/jobs.yaml. It
+            # survived here because that fix was applied to the migration Jobs and this file
+            # was never checked; it was found when a benchmark finally tried to seed a real
+            # cluster. Any new Job running a service image needs the same treatment.
+            - secretRef:
+                name: gocommerce-jwt-verifier
+            - secretRef:
+                name: gocommerce-internal-auth
           env:
             - name: CATALOG_SEED_SIZE
               value: "1000"

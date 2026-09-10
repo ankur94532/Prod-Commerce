@@ -11,8 +11,13 @@ namespace: gocommerce
 resources:
   - namespace.yaml
   - configmap.yaml
+  # The stores the ConfigMap points at. Previously absent, which made every manifest here
+  # describe a deployment that could not start. A real cluster should use managed instances
+  # instead: deploy/overlays/production-managed-data drops these and repoints the ConfigMap.
+  - data-tier
   - serviceaccounts.yaml
   - api-gateway.yaml
+  - frontend.yaml
   - auth-service.yaml
   - catalog-service.yaml
   - cart-service.yaml

@@ -1,0 +1,21 @@
+# The in-cluster data tier.
+#
+# It is a base resource because without it `kubectl apply -k k8s/` yields eight services
+# pointed at hostnames nothing serves. It is a SEPARATE directory because a real deployment
+# should delete it: see deploy/overlays/production-managed-data, which drops these objects
+# and repoints the ConfigMap at managed endpoints.
+#
+# Not included here, because it is generated from the script Compose and the isolation drill
+# both use, and a second copy would drift:
+#
+#   ops/k8s/render-postgres-init-configmap.sh | kubectl apply -f -
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: gocommerce
+
+resources:
+  - postgres.yaml
+  - redis.yaml
+  - elasticsearch.yaml
+  - kafka.yaml
+  - networkpolicies.yaml

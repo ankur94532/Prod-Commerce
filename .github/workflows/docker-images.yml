@@ -50,6 +50,10 @@ jobs:
           - service: embedding-service
             context: backend/embedding-service
             dockerfile: backend/embedding-service/Dockerfile
+          # The shop. Not a backend service, and the only image here built from frontend/.
+          - service: frontend
+            context: frontend
+            dockerfile: frontend/Dockerfile
 
     steps:
       - uses: actions/checkout@v4

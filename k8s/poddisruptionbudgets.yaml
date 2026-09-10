@@ -97,3 +97,15 @@ spec:
   selector:
     matchLabels:
       app: embedding-service
+---
+# The shop is the only thing a shopper opens, so a node drain must not take all of it at once.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend
+  namespace: gocommerce
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: frontend

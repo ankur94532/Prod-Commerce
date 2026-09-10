@@ -97,6 +97,31 @@ services:
       - ./models:/models:ro
       - embedding-cache:/root/.cache/huggingface
 
+  # The shop, served the way it is served in the cluster: nginx over the built bundle, not
+  # the Vite dev server. Local development can still use `npm run dev`, but that path and the
+  # deployed one had nothing in common, so a bug in the nginx configuration or the SPA
+  # fallback could only ever be found in Kubernetes.
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Empty, matching the cluster: the gateway is reachable on the same origin through
+        # the ingress there, and on localhost:8080 here.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL-http://localhost:8080}
+    container_name: ecommerce-frontend
+    ports:
+      - "5173:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+    healthcheck:
+      # BusyBox wget resolves localhost to ::1 in this image, while nginx listens on IPv4.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   alertmanager:
     image: prom/alertmanager:v0.27.0
     container_name: ecommerce-alertmanager

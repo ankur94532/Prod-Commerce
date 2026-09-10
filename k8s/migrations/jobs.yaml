@@ -12,6 +12,24 @@
 # Each job carries the image tag of the release being deployed, so the overlay rewrites it
 # alongside the Deployments. Migrations must be backward compatible with the currently
 # running version: expand first, contract in a later release, never both at once.
+#
+# Each Job also carries the Secrets its own Deployment carries. That is not belt-and-braces:
+# a Job runs the service's image, so Spring builds the service's whole application context,
+# including the beans that read INTERNAL_SERVICE_TOKEN and the JWT verifier configuration.
+# Without them the context fails to refresh, the Job crash-loops, and the documented release
+# procedure -- apply the migrations, wait for completion, then roll -- waits forever on a
+# condition that will never be met. ops/testing/data-tier-deploy.sh caught exactly that for
+# auth, catalog and order; analytics and recommendation happened to have no such beans and
+# completed, which is what made it look like a per-service quirk rather than a manifest gap.
+#
+# auth-service's Job also carries the signing key, which deserves an explicit defence rather
+# than silence. Nothing in a migration issues a token, so on least-privilege grounds it does
+# not belong there. The alternative is to stop building the JwtIssuer bean under the migrate
+# profile -- but AuthService takes it as a constructor argument, so excluding it cascades
+# through the service and controller layer, and the usual dodge (@Lazy) moves key validation
+# from startup to the first login. A malformed signing key failing at startup is worth more
+# than the narrower blast radius here, particularly as the same pod already holds the auth
+# database credentials, which read password hashes. Revisit if the issuer is ever separable.
 ---
 apiVersion: batch/v1
 kind: Job
@@ -47,6 +65,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: gocommerce-config
+            - secretRef:
+                name: gocommerce-jwt-verifier
+            - secretRef:
+                name: gocommerce-jwt-signer
           env:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
@@ -116,6 +138,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: gocommerce-config
+            - secretRef:
+                name: gocommerce-jwt-verifier
+            - secretRef:
+                name: gocommerce-internal-auth
           env:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
@@ -185,6 +211,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: gocommerce-config
+            - secretRef:
+                name: gocommerce-jwt-verifier
+            - secretRef:
+                name: gocommerce-internal-auth
           env:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
@@ -254,6 +284,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: gocommerce-config
+            - secretRef:
+                name: gocommerce-jwt-verifier
           env:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
@@ -323,6 +355,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: gocommerce-config
+            - secretRef:
+                name: gocommerce-jwt-verifier
+            - secretRef:
+                name: gocommerce-internal-auth
           env:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"

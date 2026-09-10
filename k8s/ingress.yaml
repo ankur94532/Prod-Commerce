@@ -24,10 +24,21 @@ spec:
     - host: gocommerce.local
       http:
         paths:
-          - path: /
+          # Most specific first. The API and the shop share one host on purpose: the browser
+          # then makes same-origin calls, so there is no CORS configuration to keep in step
+          # and no API hostname compiled into the frontend bundle.
+          - path: /api
             pathType: Prefix
             backend:
               service:
                 name: api-gateway
+                port:
+                  number: 8080
+          # Everything else is the single-page app, which serves its own routes.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
                 port:
                   number: 8080

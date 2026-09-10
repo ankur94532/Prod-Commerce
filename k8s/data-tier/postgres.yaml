@@ -1,0 +1,193 @@
+# PostgreSQL for the cluster.
+#
+# READ THIS BEFORE USING IT IN PRODUCTION. This is one replica with one volume: a single
+# failure domain, no standby, no automatic failover, and an upgrade window that stops all
+# five databases at once. It exists because the ConfigMap has always pointed at a host named
+# "postgres" that nothing provided, so `kubectl apply -k k8s/` produced eight services that
+# could not reach a database. A deployment you cannot start is not a deployment.
+#
+# The production shape is a managed instance per service (or at least a replicated cluster
+# with a tested failover), which is why every service already reads its own
+# <SERVICE>_DATASOURCE_URL: pointing them elsewhere is a ConfigMap change, and
+# deploy/overlays/production-managed-data does exactly that and drops these objects.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: gocommerce
+  labels:
+    app: postgres
+    app.kubernetes.io/component: data-tier
+spec:
+  # Headless: a StatefulSet member gets stable DNS, and there is nothing to load-balance
+  # across when there is one writer.
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: gocommerce
+  labels:
+    app: postgres
+    app.kubernetes.io/component: data-tier
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        app.kubernetes.io/component: data-tier
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        # The postgres image's own uid. fsGroup makes the mounted volumes writable by it.
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: postgres
+          image: postgres:16
+          imagePullPolicy: IfNotPresent
+          args:
+            # Write-ahead log archiving, so recovery is not limited to the last dump.
+            # ops/backup/pitr-drill.sh proves a restore to an arbitrary instant works, and
+            # k8s/backup/cronjob.yaml prunes the archive against retained base backups.
+            - postgres
+            - -c
+            - wal_level=replica
+            - -c
+            - archive_mode=on
+            - -c
+            - archive_command=test ! -f /archive/%f && cp %p /archive/%f
+            - -c
+            - archive_timeout=60
+            - -c
+            - max_wal_senders=3
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-postgres-superuser
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-postgres-superuser
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              value: ecom_auth
+            # The five role passwords the init script needs to create least-privilege roles.
+            # Named individually rather than by envFrom: this pod legitimately needs all
+            # five, but nothing else about those Secrets should leak into its environment.
+            - name: AUTH_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-auth-db
+                  key: AUTH_DB_PASSWORD
+            - name: CATALOG_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-catalog-db
+                  key: CATALOG_DB_PASSWORD
+            - name: ORDER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-order-db
+                  key: ORDER_DB_PASSWORD
+            - name: ANALYTICS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-analytics-db
+                  key: ANALYTICS_DB_PASSWORD
+            - name: RECOMMENDATION_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-recommendation-db
+                  key: RECOMMENDATION_DB_PASSWORD
+            # Initialisation writes into a subdirectory rather than the volume root, because
+            # a lost+found on some storage classes makes the mount point look non-empty and
+            # initdb then refuses to run.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: archive
+              mountPath: /archive
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: run
+              mountPath: /var/run/postgresql
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d ecom_auth"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: init
+          configMap:
+            name: gocommerce-postgres-init
+            defaultMode: 0555
+        - name: tmp
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+    - metadata:
+        name: archive
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi

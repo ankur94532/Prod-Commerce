@@ -1,0 +1,112 @@
+# Redis: the search cache, and cart-service's store.
+#
+# One replica, no Sentinel, no cluster. For search that is tolerable by design -- the chaos
+# drill proves a stalled Redis costs 524ms and gets bypassed -- but for cart-service Redis
+# IS the data, so losing this pod loses every open cart. That is the reason a managed,
+# replicated instance is the production answer, not this.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: gocommerce
+  labels:
+    app: redis
+    app.kubernetes.io/component: data-tier
+spec:
+  clusterIP: None
+  selector:
+    app: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: gocommerce
+  labels:
+    app: redis
+    app.kubernetes.io/component: data-tier
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        app.kubernetes.io/component: data-tier
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: redis
+          image: redis:7
+          imagePullPolicy: IfNotPresent
+          args:
+            # Append-only persistence: carts are not a cache, and a restart that silently
+            # empties them is a customer-visible loss with no error anywhere.
+            - redis-server
+            - --appendonly
+            - "yes"
+            - --dir
+            - /data
+            # A cache with no bound grows until the pod is OOM-killed, which turns a memory
+            # limit into a crash loop. Evict the least recently used keys instead.
+            - --maxmemory
+            - 512mb
+            - --maxmemory-policy
+            - allkeys-lru
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "768Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

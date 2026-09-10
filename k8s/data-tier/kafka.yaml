@@ -1,0 +1,158 @@
+# Kafka in KRaft mode: one broker that is also the sole controller.
+#
+# Replication factor 1 on every topic, a one-voter controller quorum, and no min.insync
+# guarantee worth the name. Losing this pod's volume loses undelivered events, and
+# order-service's producer idempotence protects against duplicates, not against that.
+# Three brokers with RF=3 and min.insync.replicas=2 is the smallest topology that makes
+# "the event was accepted" mean anything; this is not it.
+#
+# ZooKeeper is absent deliberately: it is removed in Kafka 4.x, so a ZooKeeper topology
+# would be legacy on the day it was written.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: gocommerce
+  labels:
+    app: kafka
+    app.kubernetes.io/component: data-tier
+spec:
+  clusterIP: None
+  selector:
+    app: kafka
+  ports:
+    - name: client
+      port: 9092
+      targetPort: client
+    - name: controller
+      port: 29093
+      targetPort: controller
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: gocommerce
+  labels:
+    app: kafka
+    app.kubernetes.io/component: data-tier
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+        app.kubernetes.io/component: data-tier
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: kafka
+          image: confluentinc/cp-kafka:7.6.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: client
+              containerPort: 9092
+            - name: controller
+              containerPort: 29093
+          env:
+            - name: CLUSTER_ID
+              valueFrom:
+                secretKeyRef:
+                  name: gocommerce-kafka
+                  key: CLUSTER_ID
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller
+            # The advertised address is the StatefulSet member's stable DNS name, not
+            # localhost: a client that resolves "kafka" gets a bootstrap response telling it
+            # where to connect, and localhost would send it back to itself.
+            #
+            # Built from the Downward API rather than written out, because the namespace is
+            # not fixed -- deploy/overlays/staging deploys into gocommerce-staging, and a
+            # hardcoded gocommerce here would advertise a name that does not resolve there.
+            # Kubernetes expands $(VAR) against env entries defined above it.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: "1@$(POD_NAME).kafka.$(POD_NAMESPACE).svc.cluster.local:29093"
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: CONTROLLER
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://$(POD_NAME).kafka.$(POD_NAMESPACE).svc.cluster.local:9092"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: PLAINTEXT
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "true"
+            - name: KAFKA_LOG_DIRS
+              value: /var/lib/kafka/data
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kafka/data
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            # The Confluent image writes generated configuration under /etc/kafka at start.
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 20
+          livenessProbe:
+            tcpSocket:
+              port: client
+            initialDelaySeconds: 90
+            periodSeconds: 20
+            failureThreshold: 3
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

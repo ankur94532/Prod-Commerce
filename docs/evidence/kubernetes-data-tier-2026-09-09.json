@@ -1,0 +1,53 @@
+{
+  "recorded_at_utc": "2026-09-09T15:58:29.598294+00:00",
+  "item": "the Kubernetes manifests described a deployment that could not start",
+  "evidence_class": "local_verification_only",
+  "not_deployed": "every run used a scratch namespace deleted on exit; the gocommerce namespace was never touched, and the drill refuses to apply if any rendered object still targets it",
+  "the_problem": "k8s/configmap.yaml pointed at hosts named postgres, redis, elasticsearch and kafka. No object in the repository provided any of them: the stateful layer existed only in docker-compose.yml. Applying k8s/ produced eight services that could not reach a database, and nothing said so -- the YAML was valid and kubectl apply --dry-run=client passed.",
+  "what_was_added": {
+    "k8s/data-tier": "StatefulSets for PostgreSQL (WAL archiving, PITR archive volume), Redis (AOF persistence and an LRU bound), Elasticsearch and Kafka in KRaft, plus NetworkPolicies allowlisting which service may reach which store",
+    "deploy/overlays/production-managed-data": "deletes all four StatefulSets and repoints every endpoint at managed instances, so adding an in-cluster tier does not silently redefine production as self-hosted single-node PostgreSQL",
+    "ops/k8s/render-postgres-init-configmap.sh": "generates the init ConfigMap from the same docker/postgres/init-databases.sh Compose uses, so the two cannot drift",
+    "ops/testing/data-tier-deploy.sh": "the drill that produced this evidence",
+    "k8s/frontend.yaml": "the shop, which had no container, no manifest and no Compose entry: applying k8s/ brought up nine APIs and nothing a shopper could open. nginx-unprivileged on 8080, read-only root, with the ingress routing /api to the gateway and everything else to the single-page app"
+  },
+  "drill_result": {
+    "command": "ops/testing/data-tier-deploy.sh",
+    "exit_code": 0,
+    "checks_passed": 7,
+    "checks": [
+      "PostgreSQL, Redis, Elasticsearch and Kafka all become ready from the base manifests",
+      "the init script created five databases, each owned by its own least-privilege role, and each role reached its own database with the password from its Secret",
+      "a role cannot open another service's database",
+      "Redis, Elasticsearch and Kafka answer on the service names the ConfigMap publishes",
+      "all five migration Jobs complete against the tier",
+      "all ten Deployments start and pass their own readiness probes: api-gateway, auth, catalog, cart, search, order, analytics, recommendation, embedding and the frontend",
+      "a product is retrieved through catalog-service from inside the api-gateway pod, and the frontend serves its index page, so the cluster network, service DNS and the migrated schema all work"
+    ]
+  },
+  "defects_found_that_were_in_committed_code": [
+    "Three of five migration Jobs crash-looped: they run the service's own image, so Spring builds the service's whole application context, but the Jobs carried none of the Secrets their Deployments carry. auth, catalog and order failed; analytics and recommendation happened to have no such beans and completed, which made it look like a per-service quirk. The documented release procedure would have blocked on kubectl wait for its full timeout. ops/testing/migration-job.sh missed this because it exports the credentials in the shell before running the jar: it tests the migrate profile, never the Job manifest's env wiring.",
+    "JwtProperties could not bind from environment variables, so auth-service could not start under Kubernetes or Docker Compose. It is a @ConfigurationProperties JavaBean, and a public getPrivateKey() made Spring's binder treat security.jwt.private-key as a bindable property; with SECURITY_JWT_PRIVATE_KEY_BASE64 in the environment, relaxed binding made that prefix look populated, so the binder invoked the accessor partway through binding and hit its eager validation. Only auth-service, because only auth-service is given a private key. 41 platform-security tests passed throughout: every one binds from properties, never from the environment, which is the only form that triggers it. The four derived accessors are now named resolve*, and JwtPropertiesEnvironmentBindingTest binds through a real SystemEnvironmentPropertySource; restoring the old name reproduces the production message.",
+    "The Kafka StatefulSet advertised a hardcoded gocommerce namespace, which would have broken the pre-existing deploy/overlays/staging (namespace gocommerce-staging): the broker would advertise a DNS name that does not resolve there. Now built from the Downward API.",
+    "embedding-service could not start in Kubernetes. The manifest passed only EMBEDDING_MODEL_NAME with no model on disk and readOnlyRootFilesystem: true, so each pod would try to download BAAI/bge-small-en-v1.5 into a home directory it cannot write. The second half matters more: the download was unpinned, so the weights -- and therefore every embedding and every search result -- could change without a deploy, silently invalidating the evaluation evidence. The Dockerfile now fetches the weights at build time pinned to revision 5c38ec7c405ec4b44b94cc5a9bb96e735b38267a and verifies model.safetensors against sha256 3c9f31665447c8911517620762200d2245a2518d6e7208acc78cd9db317e21ad -- the same digest recorded in the search evaluation evidence -- so the build fails rather than shipping weights the evidence does not describe. HF_HUB_OFFLINE=1 stops a pod reaching for another.",
+    "frontend/src/api/apiBase.js read the API base as `VITE_API_BASE_URL || \"http://localhost:8080\"`. `||` treats an empty string as unset, so a same-origin deployment -- the configuration that lets one image serve every environment -- would have compiled localhost:8080 into the bundle and every shopper's browser would have called their own machine. Changed to `??`; the built bundle now contains zero occurrences of localhost:8080, asserted directly."
+  ],
+  "a_decision_made_explicit_rather_than_silently": "auth-service's migration Job carries the JWT signing key. On least-privilege grounds it should not, but AuthService takes JwtIssuer as a constructor argument, so excluding the bean under the migrate profile cascades through the service and controller layer, and @Lazy would move key validation from startup to the first login. A malformed key failing a deploy is worth more than the narrower blast radius, particularly as the same pod already holds credentials that read password hashes. The reasoning is recorded in k8s/migrations/jobs.yaml.",
+  "defects_in_the_drill_itself_found_by_running_it": [
+    "declare -A is bash 4; macOS ships 3.2",
+    "tr < /dev/urandom | head -c gets SIGPIPE, which pipefail turns into exit 141",
+    "ServiceAccounts were not applied, so Job pods stayed Pending while the Jobs read Running",
+    "seven-month-old service images were silently under test; the drill now refuses an image older than the source it claims to run, which is how the stale build was caught",
+    "that freshness checker dropped the UTC offset from Docker's timestamp and reported freshly built images as stale on a +05:30 machine",
+    "the freshness checker treated .DS_Store as source, so every image on a Mac was permanently stale; it now ignores what backend/.dockerignore already excludes, and reports an unreadable timestamp as a message rather than a stack trace",
+    "images were being built as `-t $s:latest` in zsh, where $s:l is the lowercase parameter modifier: the tag became <service>atest and <service>:latest silently kept an older build, while docker build reported success. Three services were affected and the freshness check is what caught it."
+  ],
+  "limits": [
+    "One replica of each store: a single failure domain, no failover, and an upgrade window that stops all five databases at once. This is a startable deployment, not a resilient one.",
+    "Elasticsearch runs with security disabled, matching docker-compose. The NetworkPolicy is what limits access to it, and NetworkPolicies are not enforced on this cluster.",
+    "Kafka is one broker with replication factor 1: losing its volume loses undelivered events.",
+    "The production-managed-data overlay is rendered and checked, not deployed: it points at REPLACE_ME endpoints by design.",
+    "Nothing here has been deployed.",
+    "All nine services now start and pass readiness, and one request is served end to end. That is a start-up and connectivity proof, not a functional one: no checkout, search or payment flow is exercised in the cluster, and readiness says a process answered its own probe."
+  ]
+}

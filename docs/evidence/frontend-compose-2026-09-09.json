@@ -1,0 +1,16 @@
+{
+  "recorded_at_utc": "2026-09-09T16:54:21Z",
+  "item": "Compose frontend runtime verification",
+  "evidence_class": "local_runtime_verification_only",
+  "command": "docker compose up -d --build frontend",
+  "environment_note": "The owner's untracked .env was not edited. The five missing per-service database password variables were supplied only to the Compose process using the development values documented in .env.example.",
+  "results": {
+    "compose_config_valid": true,
+    "container_state": "running",
+    "docker_health": "healthy",
+    "healthz": {"url": "http://127.0.0.1:5173/healthz", "status": 200, "body": "ok\n"},
+    "deep_link": {"url": "http://127.0.0.1:5173/orders/1", "status": 200, "content_type": "text/html", "spa_root_present": true}
+  },
+  "defect_found_and_fixed": "BusyBox wget resolved localhost to ::1 while nginx listened on IPv4, so external requests succeeded but Docker health stayed in starting. The healthcheck now uses 127.0.0.1.",
+  "limits": ["Local Compose only; nothing was deployed.", "The deep-link check verifies nginx SPA fallback, not browser behavior or backend data."]
+}
