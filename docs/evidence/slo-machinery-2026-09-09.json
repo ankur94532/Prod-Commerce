@@ -1,0 +1,37 @@
+{
+  "recorded_at_utc": "2026-09-09T17:42:21Z",
+  "item": "Prometheus SLI recording and gateway burn-rate alert drill",
+  "evidence_class": "local_sli_plumbing_verification",
+  "not_an_slo_measurement": "This verifies metric labels, PromQL evaluation, and alert state transitions under synthetic local traffic. It is not production traffic and is not an observed SLO track record.",
+  "topology": "single local gateway/search/catalog JVMs with disposable PostgreSQL, Elasticsearch, Redis, embedding, and Prometheus containers",
+  "scraped_labels": {"api_gateway_service_label_present": true, "search_service_label_present": true},
+  "healthy_recordings": {
+    "job:gateway_requests:rate5m": 0.8806282634,
+    "job:gateway_errors:rate5m": 0,
+    "job:gateway_availability:ratio5m": 1,
+    "job:gateway_error_budget_consumed:ratio30d": 0,
+    "job:search_latency_p95:5m_seconds": 0.1434299581
+  },
+  "defects_found_and_fixed": [
+    "No 5xx metric series exists before the first error, so the error, availability, and budget recordings were empty on a healthy system. The error expressions now preserve vector(0).",
+    "The gateway search fallback returned 200 with an empty result set, hiding dependency failure from both shoppers and the 5xx SLI. It now returns 503 and has a regression test."
+  ],
+  "fault_injection": {
+    "dependency": "search-service JVM paused with SIGSTOP",
+    "first_fallback_status": 503,
+    "first_fallback_latency_ms": 4024.827,
+    "load": "2 constant arrivals/second for 6m30s",
+    "requests": 781,
+    "non_2xx_rate": 1,
+    "alert": "GatewayErrorBudgetBurningFast",
+    "active_at_utc": "2026-09-09T17:36:18.143087431Z",
+    "observed_firing_at_utc": "2026-09-09T17:41:23Z",
+    "state": "firing",
+    "rule_health": "ok",
+    "rule_evaluation_error": null,
+    "gateway_availability_ratio5m_while_firing": 0.0909090909,
+    "recovery": "Search resumed with SIGCONT; the next gateway probe returned 200 without restarting either service."
+  },
+  "validation": "promtool check rules: SUCCESS, 18 rules found",
+  "limits": ["No alert was delivered to a pager.", "The injected outage and traffic were synthetic and local.", "The 30-day recording had minutes of local samples, not a 30-day observation."]
+}

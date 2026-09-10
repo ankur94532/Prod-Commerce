@@ -51,9 +51,9 @@ public class JwtIssuer {
         if (properties.isRsaConfigured()) {
             return builder
                     .setHeaderParam("kid", properties.getActiveKeyId())
-                    .signWith(properties.getPrivateKey(), SignatureAlgorithm.RS256)
+                    .signWith(properties.resolvePrivateKey(), SignatureAlgorithm.RS256)
                     .compact();
         }
-        return builder.signWith(properties.getSigningKey()).compact();
+        return builder.signWith(properties.resolveSigningKey()).compact();
     }
 }

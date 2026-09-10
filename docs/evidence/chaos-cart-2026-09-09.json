@@ -1,0 +1,26 @@
+{
+  "recorded_at_utc": "2026-09-09T15:58:29.598943+00:00",
+  "item": "chaos coverage extended beyond search, to the store that holds the cart",
+  "evidence_class": "local_verification_only",
+  "not_deployed": "disposable containers on random ports; no project volume or Compose service is touched",
+  "why_cart": "The search drill asserts a Redis outage costs latency and not availability, because there Redis is a cache. Cart is the opposite and the more dangerous case: Redis holds the cart itself. CartService.getCart does findById(...).orElseGet(() -> new Cart(id)), where a miss legitimately means 'no cart yet'. If a connection failure were ever folded into that same path, a shopper with an intact cart would be shown an empty one, with 200 OK, no error, and nothing in any dashboard.",
+  "drill_result": {
+    "command": "ops/testing/chaos-drill-cart.sh",
+    "exit_code": 0,
+    "checks_passed": 4,
+    "observations": {
+      "redis_unreachable_status": "500, not 200 with an empty cart",
+      "slowest_read_with_redis_stalled_ms": 2026,
+      "previously": "roughly 60000ms, Lettuce's default command timeout",
+      "after_recovery": "the cart still held its item, with no restart"
+    },
+    "note": "This is the first verification of the cart-service Redis timeout added earlier the same day, which was recorded at the time as reasoned but not drill-verified."
+  },
+  "defect_found_in_the_drill_itself": "The first run reused whatever jar happened to be in target/, which predated the Redis timeout it was written to verify, and reported a 60-second stall as a property of the service rather than of the artifact. It now refuses a jar older than its source and asserts the timeout actually shipped in the packaged application.yml -- checking the property directly, because a 60-second stall has several possible causes and only one of them is the configuration.",
+  "supporting_tool": "ops/testing/mint-access-token.py mints an RS256 access token with openssl and the standard library, so the drill can authenticate. Without it the drill could only reach /health, which reads no state at all.",
+  "limits": [
+    "One service and one dependency. order-service against a failed PostgreSQL or Kafka, and the gateway's rate limiter against a stalled Redis, remain unexercised.",
+    "A paused container is a network black hole, which is one failure mode. Packet loss, slow responses and partial failures are not covered.",
+    "Nothing here has been deployed."
+  ]
+}

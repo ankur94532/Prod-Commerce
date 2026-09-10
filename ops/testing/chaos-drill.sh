@@ -21,12 +21,29 @@ es="chaos-es-$suffix"
 redis="chaos-redis-$suffix"
 work="$(mktemp -d)"
 app_pid=""
+cleaned=0
 
 cleanup() {
-  [ -n "$app_pid" ] && kill "$app_pid" 2>/dev/null && wait "$app_pid" 2>/dev/null
-  [ -n "${stub_pid:-}" ] && kill "$stub_pid" 2>/dev/null
-  docker rm -f "$es" "$redis" >/dev/null 2>&1 || true
+  # A cleanup that stops halfway is worse than none, and this one did. Under `set -e`, a
+  # false `[ -n "$pid" ]` test -- or a `wait` on a process the function had just killed,
+  # which returns 143 -- ended the trap early. The containers below were never removed, so
+  # every aborted run leaked a gigabyte-sized Elasticsearch, and a run that had actually
+  # succeeded exited 143.
+  #
+  # Hence: capture the real status first, refuse to re-enter, turn errexit off for the
+  # duration, and never block on a process being torn down. Returning rather than calling
+  # exit leaves the script's own status intact.
+  local status=$?
+  [ "$cleaned" = 1 ] && return
+  cleaned=1
+  set +e
+  for pid in "$app_pid" "${stub_pid:-}"; do
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null
+  done
+  docker rm -f "$es" "$redis" >/dev/null 2>&1
   rm -rf "$work"
+  echo "cleaned up drill containers" >&2
+  return "$status"
 }
 trap cleanup EXIT
 
@@ -119,7 +136,10 @@ curl -sf -X POST "http://127.0.0.1:${es_port}/products/_doc/1?refresh=true" \
 
 status_and_items() {
   local out
-  out="$(curl -s -o "$work/body.json" -w '%{http_code}' \
+  # Elapsed time comes back with the status because "did it answer" is not the whole
+  # property: a search that eventually succeeds after a minute is an outage that this check
+  # would otherwise score as a pass.
+  out="$(curl -s -o "$work/body.json" -w '%{http_code} %{time_total}' \
     "http://127.0.0.1:${app_port}/api/v1/search?q=chaos&mode=text&page=0&size=10")"
   local items
   items="$(python3 -c "
@@ -132,11 +152,14 @@ except Exception:
   echo "$out $items"
 }
 
+# status_and_items now prints "<code> <seconds> <items>"; callers read three fields.
+elapsed_ms() { python3 -c "print(int(float('$1') * 1000))"; }
+
 flush_cache() { docker exec "$redis" redis-cli FLUSHALL >/dev/null 2>&1 || true; }
 
 checks=0
 echo "1. Baseline: search returns results"
-read -r code items <<< "$(status_and_items)"
+read -r code seconds items <<< "$(status_and_items)"
 [ "$code" = "200" ] && [ "$items" -ge 1 ] || {
   echo "FAIL: baseline search returned ${code} with ${items} items" >&2; tail -20 "$work/app.log" >&2; exit 1; }
 checks=$((checks + 1))
@@ -151,7 +174,7 @@ docker pause "$es" >/dev/null
 sleep 2
 degraded=""
 for _ in $(seq 1 20); do
-  read -r code items <<< "$(status_and_items)"
+  read -r code seconds items <<< "$(status_and_items)"
   if [ "$code" = "200" ] && [ "$items" = "0" ]; then
     echo "FAIL: search answered 200 with zero results while Elasticsearch was down." >&2
     echo "      That is indistinguishable from a catalog with nothing matching." >&2
@@ -170,7 +193,7 @@ echo "3. Elasticsearch back: search recovers without a restart"
 flush_cache
 recovered=""
 for _ in $(seq 1 60); do
-  read -r code items <<< "$(status_and_items)"
+  read -r code seconds items <<< "$(status_and_items)"
   if [ "$code" = "200" ] && [ "$items" -ge 1 ]; then recovered="yes"; break; fi
   sleep 2
 done
@@ -179,11 +202,20 @@ checks=$((checks + 1))
 echo "   recovered"
 
 echo "4. Redis paused: the cache is an optimization, not a dependency"
+# Paused, not stopped, and the distinction is the point. A stopped Redis refuses the
+# connection and the client fails fast; a paused one holds the socket open and answers
+# nothing, which is what an overloaded instance or a network partition actually looks like.
+# The first version of this check only asked whether search still answered. It did -- after
+# Lettuce's default 60-second command timeout, on every single request. Availability alone
+# cannot tell that apart from a healthy bypass, so the budget below is part of the check.
 flush_cache
 docker pause "$redis" >/dev/null
 survived=""
+slowest=0
 for _ in $(seq 1 10); do
-  read -r code items <<< "$(status_and_items)"
+  read -r code seconds items <<< "$(status_and_items)"
+  observed="$(elapsed_ms "$seconds")"
+  [ "$observed" -gt "$slowest" ] && slowest="$observed"
   if [ "$code" = "200" ] && [ "$items" -ge 1 ]; then survived="yes"; break; fi
   sleep 2
 done
@@ -193,7 +225,16 @@ docker unpause "$redis" >/dev/null
   echo "      A cache outage must degrade latency, not availability." >&2
   exit 1; }
 checks=$((checks + 1))
-echo "   still served results"
+# Well above a healthy bypass (the cache timeout is 250ms) and far below the 60 seconds an
+# unbounded client costs, so this fails on a regression rather than on ordinary variance.
+budget_ms="${CHAOS_STALLED_CACHE_BUDGET_MS:-5000}"
+[ "$slowest" -le "$budget_ms" ] || {
+  echo "FAIL: search answered, but took ${slowest}ms with Redis stalled (budget ${budget_ms}ms)." >&2
+  echo "      A cache that stops responding must be bypassed, not waited on. Check" >&2
+  echo "      spring.data.redis.timeout; Lettuce defaults to 60 seconds." >&2
+  exit 1; }
+checks=$((checks + 1))
+echo "   still served results, slowest ${slowest}ms with the cache stalled"
 
 echo "Chaos drill passed ${checks} checks: a dependency outage fails loudly, recovers on its"
-echo "own, and a cache outage does not take search down."
+echo "own, and a stalled cache is bypassed within its budget rather than taking search down."

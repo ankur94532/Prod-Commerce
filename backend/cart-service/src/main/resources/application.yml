@@ -10,6 +10,14 @@ spring:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
       database: ${SPRING_DATA_REDIS_DATABASE:0}
+      # Redis is this service's store, not a cache, so a stalled Redis genuinely means no
+      # carts. The bound is still needed: on Lettuce's 60-second default every request thread
+      # sits blocked until the pool is exhausted, which turns a degraded dependency into a
+      # dead service. Two seconds is generous for a store and short enough to shed load.
+      #
+      # Honest limit: unlike search-service's, this bound has not been exercised by a drill.
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:2s}
+      connect-timeout: ${SPRING_DATA_REDIS_CONNECT_TIMEOUT:1s}
 
 management:
   endpoints:

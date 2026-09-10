@@ -36,7 +36,23 @@ public class JwtProperties {
     private Duration accessTokenTtl = Duration.ofMinutes(15);
     private Duration refreshTokenTtl = Duration.ofDays(7);
 
-    public SecretKey getSigningKey() {
+    // These four are named resolve*, not get*, and that is load-bearing rather than a style
+    // choice.
+    //
+    // This class is @ConfigurationProperties, so Spring binds it as a JavaBean. A public
+    // getPrivateKey() makes the binder believe there is a bindable property named
+    // "security.jwt.private-key". Supply the key through an environment variable --
+    // SECURITY_JWT_PRIVATE_KEY_BASE64, which is exactly how Kubernetes envFrom and Docker
+    // Compose pass it -- and relaxed binding makes "security.jwt.private-key" look like a
+    // populated prefix. The binder then calls the getter partway through binding, before
+    // active-key-id and public-key-base64 have been set, and the eager validation inside
+    // throws. auth-service failed to start with "Failed to bind properties under
+    // 'security.jwt.private-key'", and only auth-service, because it is the only service
+    // given a private key.
+    //
+    // Every test passed throughout: tests bind these from properties, never from the
+    // environment, and the environment is the one form that triggers it.
+    public SecretKey resolveSigningKey() {
         if (secret == null || secret.length() < MINIMUM_SECRET_LENGTH) {
             throw new IllegalStateException(
                     "security.jwt.secret must be configured and at least " + MINIMUM_SECRET_LENGTH + " characters long");
@@ -45,7 +61,7 @@ public class JwtProperties {
     }
 
     /** Returns the active RSA signing key. Only the auth service should call this. */
-    public PrivateKey getPrivateKey() {
+    public PrivateKey resolvePrivateKey() {
         requireActiveRsaConfiguration(true);
         try {
             return KeyFactory.getInstance("RSA").generatePrivate(
@@ -56,7 +72,7 @@ public class JwtProperties {
     }
 
     /** Active and overlap-window verification keys, keyed by the JWT {@code kid}. */
-    public Map<String, PublicKey> getPublicKeys() {
+    public Map<String, PublicKey> resolvePublicKeys() {
         requireActiveRsaConfiguration(false);
         Map<String, PublicKey> keys = new LinkedHashMap<>();
         keys.put(activeKeyId, parsePublicKey(publicKeyBase64, "security.jwt.public-key-base64"));
@@ -76,9 +92,9 @@ public class JwtProperties {
         return Map.copyOf(keys);
     }
 
-    public Key getVerificationKey(String keyId) {
+    public Key resolveVerificationKey(String keyId) {
         if (hasText(keyId)) {
-            PublicKey key = getPublicKeys().get(keyId);
+            PublicKey key = resolvePublicKeys().get(keyId);
             if (key == null) {
                 throw new IllegalArgumentException("Unknown JWT key ID");
             }
@@ -87,7 +103,7 @@ public class JwtProperties {
         // Tokens issued before asymmetric-key rollout have no kid. Keep this narrow
         // compatibility path only while the legacy secret is explicitly configured.
         if (hasLegacySecret()) {
-            return getSigningKey();
+            return resolveSigningKey();
         }
         throw new IllegalArgumentException("JWT key ID is missing");
     }
@@ -103,13 +119,13 @@ public class JwtProperties {
 
     public void validateForVerifier() {
         if (isRsaConfigured()) {
-            for (PublicKey key : getPublicKeys().values()) {
+            for (PublicKey key : resolvePublicKeys().values()) {
                 if (!(key instanceof RSAPublicKey rsa) || rsa.getModulus().bitLength() < 2048) {
                     throw new IllegalStateException("JWT RSA public keys must be at least 2048 bits");
                 }
             }
         } else {
-            getSigningKey();
+            resolveSigningKey();
         }
     }
 
@@ -118,8 +134,8 @@ public class JwtProperties {
         if (!isRsaConfigured()) {
             return;
         }
-        PrivateKey privateKey = getPrivateKey();
-        PublicKey publicKey = getPublicKeys().get(activeKeyId);
+        PrivateKey privateKey = resolvePrivateKey();
+        PublicKey publicKey = resolvePublicKeys().get(activeKeyId);
         if (!(privateKey instanceof RSAPrivateKey privateRsa)
                 || !(publicKey instanceof RSAPublicKey publicRsa)
                 || !privateRsa.getModulus().equals(publicRsa.getModulus())) {

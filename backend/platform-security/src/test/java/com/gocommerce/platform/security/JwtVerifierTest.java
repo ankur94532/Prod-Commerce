@@ -82,7 +82,7 @@ class JwtVerifierTest {
                 .setSubject("user-1")
                 .addClaims(Map.of("role", "USER"))
                 .setExpiration(Date.from(Instant.now().plusSeconds(600)))
-                .signWith(properties.getSigningKey())
+                .signWith(properties.resolveSigningKey())
                 .compact();
 
         assertThatThrownBy(() -> verifier.verify(legacy, TokenType.ACCESS))
@@ -96,7 +96,7 @@ class JwtVerifierTest {
                 .setSubject("user-1")
                 .addClaims(Map.of(TokenType.CLAIM, "session"))
                 .setExpiration(Date.from(Instant.now().plusSeconds(600)))
-                .signWith(properties.getSigningKey())
+                .signWith(properties.resolveSigningKey())
                 .compact();
 
         assertThatThrownBy(() -> verifier.verify(odd, TokenType.ACCESS))
@@ -229,7 +229,7 @@ class JwtVerifierTest {
                 .setSubject("user-1")
                 .addClaims(Map.of(TokenType.CLAIM, "access", "role", "USER", "roles", List.of("ADMIN", "ROLE_SUPPORT")))
                 .setExpiration(Date.from(Instant.now().plusSeconds(600)))
-                .signWith(properties.getSigningKey())
+                .signWith(properties.resolveSigningKey())
                 .compact();
 
         VerifiedToken verified = verifier.verify(token, TokenType.ACCESS);
@@ -251,16 +251,16 @@ class JwtVerifierTest {
 
     @Test
     void shortOrMissingSecretsRefuseToProduceAKey() {
-        assertThatThrownBy(() -> properties("too-short").getSigningKey())
+        assertThatThrownBy(() -> properties("too-short").resolveSigningKey())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("at least 32 characters");
-        assertThatThrownBy(() -> new JwtProperties().getSigningKey())
+        assertThatThrownBy(() -> new JwtProperties().resolveSigningKey())
                 .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
     void signingKeyMatchesAPlainHmacKeyBuiltFromTheSameSecret() {
-        assertThat(properties.getSigningKey().getEncoded())
+        assertThat(properties.resolveSigningKey().getEncoded())
                 .isEqualTo(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)).getEncoded());
     }
 

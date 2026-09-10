@@ -36,7 +36,7 @@ public class JwtVerifier {
                     .setSigningKeyResolver(new SigningKeyResolverAdapter() {
                         @Override
                         public Key resolveSigningKey(JwsHeader header, Claims untrustedClaims) {
-                            return properties.getVerificationKey(header.getKeyId());
+                            return properties.resolveVerificationKey(header.getKeyId());
                         }
                     })
                     .build()

@@ -12,7 +12,10 @@ groups:
         expr: sum(rate(http_server_requests_seconds_count{service="api-gateway"}[5m]))
 
       - record: job:gateway_errors:rate5m
-        expr: sum(rate(http_server_requests_seconds_count{service="api-gateway",status=~"5.."}[5m]))
+        # No 5xx time series exists at all until the first error. Preserve a real zero so
+        # the downstream availability and budget recordings do not silently disappear on
+        # a healthy system.
+        expr: sum(rate(http_server_requests_seconds_count{service="api-gateway",status=~"5.."}[5m])) or vector(0)
 
       - record: job:gateway_availability:ratio5m
         expr: >
@@ -60,7 +63,7 @@ groups:
       # Budget consumed over the objective window, for reporting rather than paging.
       - record: job:gateway_error_budget_consumed:ratio30d
         expr: >
-          (sum(increase(http_server_requests_seconds_count{service="api-gateway",status=~"5.."}[30d]))
+          ((sum(increase(http_server_requests_seconds_count{service="api-gateway",status=~"5.."}[30d])) or vector(0))
             / clamp_min(sum(increase(http_server_requests_seconds_count{service="api-gateway"}[30d])), 1e-9)) / 0.001
 
       - record: job:search_latency_p95:5m

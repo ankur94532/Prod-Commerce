@@ -1,0 +1,17 @@
+{
+  "recorded_at_utc": "2026-09-09T18:05:54Z",
+  "item": "gateway rate-limiter behavior with stalled Redis",
+  "evidence_class": "local_fault_injection_only",
+  "command": "ops/testing/chaos-drill-gateway.sh",
+  "exit_code": 0,
+  "checks_passed": 4,
+  "decision": "Fail open for storefront reads. This preserves availability when rate-limit state is unavailable, while accepting that abuse and cost protection are absent until Redis recovers.",
+  "observations": {
+    "baseline": "200 with one deterministic upstream item",
+    "redis_paused": "three 200 responses, each preserving the upstream item",
+    "slowest_paused_request_ms": 1051,
+    "redis_recovered": "the configured burst limit produced 429 again without restarting the gateway"
+  },
+  "isolation": "The upstream is a deterministic stub, so the timing measures the gateway rate limiter rather than search-service's separate Redis cache behavior.",
+  "limits": ["Local disposable Redis and one gateway JVM.", "A paused container is a stalled connection, not packet loss or a managed Redis failure.", "Nothing was deployed."]
+}

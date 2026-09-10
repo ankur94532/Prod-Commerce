@@ -9,6 +9,14 @@ spring:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
       database: ${SPRING_DATA_REDIS_DATABASE:0}
+      # The same unbounded default the chaos drill caught in search-service, and worse here:
+      # the rate limiter runs on every request through the gateway, so a Redis that holds the
+      # connection open and stops answering would stall the entire edge for Lettuce's 60
+      # seconds. One second is far beyond a healthy rate-limit check.
+      #
+      # Honest limit: unlike search-service's, this bound has not been exercised by a drill.
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:1s}
+      connect-timeout: ${SPRING_DATA_REDIS_CONNECT_TIMEOUT:1s}
   cloud:
     gateway:
       globalcors:

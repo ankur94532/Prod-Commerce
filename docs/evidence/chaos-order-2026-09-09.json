@@ -1,0 +1,32 @@
+{
+  "recorded_at_utc": "2026-09-09T18:05:54+00:00",
+  "item": "chaos coverage for the money path",
+  "evidence_class": "local_verification_only",
+  "not_deployed": "disposable PostgreSQL and Kafka on random ports, plus an in-process catalog stub; no project volume or Compose service is touched",
+  "why_these_faults_together": "A database outage or read-only database must stop checkout: the dangerous answer is a 2xx carrying an order id for a row that was never written. A broker outage must NOT stop checkout: the outbox exists so Kafka is not a hard dependency of taking money.",
+  "drill_result": {
+    "command": "ops/testing/chaos-drill-order.sh",
+    "exit_code": 0,
+    "checks_passed": 9,
+    "observations": {
+      "baseline": "201 with the order persisted as PAID",
+      "postgresql_paused": "500, and the order count was unchanged afterwards, so the failed attempt left no phantom row",
+      "postgresql_read_only": "the database continued accepting connections and SELECTs, checkout returned 500, and the order count stayed unchanged",
+      "after_writes_restored": "checkout returned 201 without restarting order-service",
+      "kafka_paused": "201: checkout completed with the broker down",
+      "events_held": "3 events waiting unpublished in outbox_events",
+      "after_kafka_returned": "the outbox drained without a restart"
+    }
+  },
+  "defects_found_in_the_drill_itself": [
+    "The catalog stub served only the product-snapshot GET, but checkout also reserves stock with POST /api/v1/internal/inventory/products/{id}/decrement before it charges. Every reservation failed, so every order took the compensation path -- which from outside is indistinguishable from a payment failure.",
+    "The baseline accepted any 2xx. The controller answers 202 for PENDING_PAYMENT and COMPENSATING, so a checkout that never completed passed the baseline, and the later outbox assertions were then examining an order that was never placed. Checks 1 and 4 now require 201 specifically, and check 1 asserts a PAID row exists. An assertion loose enough for a broken setup to pass is the same class of error as measuring a stale artifact.",
+    "The jar-freshness check watched all of src, so a change to a test file forced a rebuild. Scoped to src/main, which is what actually ends up in the jar."
+  ],
+  "what_this_does_not_cover": [
+    "The read-only case covers a live database that rejects writes. Disk-full behavior, packet loss, and progressively slow responses remain untested.",
+    "The payment provider is the in-process mock, so no real provider timeout or decline is exercised here.",
+    "catalog-service is a stub serving the agreed contract fixture, not the real service.",
+    "Nothing here has been deployed."
+  ]
+}

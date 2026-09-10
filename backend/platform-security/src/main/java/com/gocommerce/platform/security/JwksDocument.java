@@ -17,7 +17,7 @@ public final class JwksDocument {
 
     public static Map<String, Object> from(JwtProperties properties) {
         List<Map<String, String>> keys = new ArrayList<>();
-        properties.getPublicKeys().forEach((keyId, key) -> keys.add(toJwk(keyId, key)));
+        properties.resolvePublicKeys().forEach((keyId, key) -> keys.add(toJwk(keyId, key)));
         return Map.of("keys", List.copyOf(keys));
     }
 
