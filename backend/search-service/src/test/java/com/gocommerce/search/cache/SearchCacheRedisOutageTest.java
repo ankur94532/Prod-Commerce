@@ -33,6 +33,9 @@ class SearchCacheRedisOutageTest {
         return new SearchCacheRedis(template, new ObjectMapper(), 60);
     }
 
+    // mock() erases the type arguments of ValueOperations, so the assignment below is
+    // unchecked by construction rather than by mistake.
+    @SuppressWarnings("unchecked")
     @Test
     void anUnreachableCacheReadsAsAMissRatherThanThrowing() {
         StringRedisTemplate template = mock(StringRedisTemplate.class);
@@ -43,6 +46,9 @@ class SearchCacheRedisOutageTest {
         assertThat(cacheWith(template).get(request)).isEmpty();
     }
 
+    // mock() erases the type arguments of ValueOperations, so the assignment below is
+    // unchecked by construction rather than by mistake.
+    @SuppressWarnings("unchecked")
     @Test
     void aSlowCacheReadAlsoDegradesToAMiss() {
         StringRedisTemplate template = mock(StringRedisTemplate.class);
@@ -53,6 +59,9 @@ class SearchCacheRedisOutageTest {
         assertThat(cacheWith(template).get(request)).isEmpty();
     }
 
+    // mock() erases the type arguments of ValueOperations, so the assignment below is
+    // unchecked by construction rather than by mistake.
+    @SuppressWarnings("unchecked")
     @Test
     void anUnreachableCacheSwallowsTheWriteInsteadOfFailingTheSearch() {
         StringRedisTemplate template = mock(StringRedisTemplate.class);

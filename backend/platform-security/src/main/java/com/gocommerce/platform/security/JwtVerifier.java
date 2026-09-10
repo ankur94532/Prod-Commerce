@@ -34,6 +34,13 @@ public class JwtVerifier {
         try {
             claims = Jwts.parserBuilder()
                     .setSigningKeyResolver(new SigningKeyResolverAdapter() {
+                        // JwsHeader is a generic type, but jjwt 0.11.5 declares this callback
+                        // with the raw one, so the raw type here is required rather than
+                        // sloppy. Narrowing it to JwsHeader<?> compiles and is NOT an
+                        // override -- it becomes an overload, jjwt keeps calling the adapter's
+                        // raw method, that returns null, and every token fails to verify.
+                        // Fifteen tests caught exactly that; the warning is the safer option.
+                        @SuppressWarnings("rawtypes")
                         @Override
                         public Key resolveSigningKey(JwsHeader header, Claims untrustedClaims) {
                             return properties.resolveVerificationKey(header.getKeyId());

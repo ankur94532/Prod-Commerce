@@ -1,6 +1,5 @@
 package com.gocommerce.search.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gocommerce.search.config.EmbeddingProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
