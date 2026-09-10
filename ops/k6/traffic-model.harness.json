@@ -1,0 +1,30 @@
+{
+  "model_version": 1,
+  "status": "FIXTURE — DELIBERATELY UNREALISTIC, FOR HARNESS VERIFICATION ONLY",
+  "what_this_is": "Drives ops/testing/load-harness.sh, whose job is to prove that shopper-journey.js executes all four steps and writes a well-formed summary. That is a question about the script, not about traffic, so this model is tuned to exercise every branch in a few seconds rather than to resemble a shopper.",
+  "why_not_the_real_model": "traffic-model.json converts 1.2% of sessions. In an eight-second harness run that is roughly two expected checkouts, so an assertion that any checkout happened would fail perhaps one run in six. Making the realistic model less realistic to keep a fast test green would be the wrong trade; using an openly fake model for a plumbing check is the right one. Never quote a number produced under this file.",
+
+  "session_mix": {
+    "comment": "Every session reaches checkout, so all four steps run on every iteration.",
+    "browse_only": 0.0,
+    "browse_and_search": 0.0,
+    "adds_to_cart": 0.0,
+    "completes_checkout": 1.0
+  },
+
+  "query_distribution": { "head_share_of_requests": 0.5, "head_size_queries": 10, "tail_share_of_requests": 0.5 },
+  "query_quality": { "typo_share": 0.0, "natural_language_share": 0.0, "zero_result_share": 0.0 },
+
+  "pacing": {
+    "comment": "No think time: an eight-second run must complete whole journeys, and real dwell time would leave most of them unfinished.",
+    "think_time_seconds": { "min": 0.0, "max": 0.0, "distribution": "uniform" }
+  },
+
+  "arrival": { "profiles": { "constant": { "description": "Flat." } } },
+  "shoppers": { "mode": "shared", "distinct_shopper_count": 1 },
+
+  "limits": [
+    "invented fixture: a 100% conversion rate and zero think time exist to exercise code paths, not to describe shoppers",
+    "No number produced under this model describes capacity, latency or behaviour of anything."
+  ]
+}

@@ -242,9 +242,9 @@ Accurate as of the review on 2026-09-09. Anything not listed here is covered by 
 - **Nobody is paged.** Alertmanager routes by severity and reads each receiver's URL from a
   mounted secret that does not exist. 18 rules fire into a void until a real destination is
   wired and a test alert is observed arriving.
-- **No SLO has been measured.** `docs/SLO.md` states intended objectives. The load harness
-  is verified but has never been run against the application, so no latency or throughput
-  figure here is an observation.
+- **No production SLO has been measured.** `docs/SLO.md` states intended objectives. The SLI
+  plumbing and alert transition have now been exercised under synthetic local traffic, but
+  that is not a production track record.
 - **The graded evaluation is AI-judged, not human-judged.** A full run now exists
   (`backend/search-service/evaluation/runs/2026-09-09-ai`, evidence class
   `ai_judged_pooled_evaluation`): 14 held-out queries, 271 blinded pairs, graded by Claude
@@ -270,6 +270,171 @@ Accurate as of the review on 2026-09-09. Anything not listed here is covered by 
 - Backups are scheduled (`k8s/backup/cronjob.yaml`) and retention is enforced and tested,
   but the volume sits in the same cluster as the database. That is not an offsite copy, and
   no RPO or RTO is claimed.
-- No chaos or fault-injection testing, no performance regression gate, no coverage floor.
-- Resource requests and limits are guesses; there is no capacity or cost model.
+- Packet loss, progressively slow responses, and disk-full behavior remain untested. There
+  is still no performance regression gate or coverage floor.
+- Resource requests and limits remain guesses. A first single-replica laptop benchmark now
+  exists, but it is not a production capacity or cost model.
 - No on-call rotation. The runbooks in `docs/runbooks/` exist but nobody owns them.
+
+## The Kubernetes data tier (added 2026-09-09)
+
+`k8s/configmap.yaml` had always pointed at hosts named `postgres`, `redis`, `elasticsearch`
+and `kafka`, and nothing in the repository provided any of them — the stateful layer existed
+only in `docker-compose.yml`. Applying `k8s/` produced eight services that could not reach a
+database, and every validator passed, because the YAML was correct and only the deployment
+was impossible.
+
+`k8s/data-tier/` now supplies the four stores and `ops/testing/data-tier-deploy.sh` proves it
+in a self-deleting scratch namespace: **seven checks, ending with all ten deployments starting,
+passing readiness, a product retrieved through `catalog-service` from inside the
+`api-gateway` pod, and the shop serving its index**. Evidence: `docs/evidence/kubernetes-data-tier-2026-09-09.json`.
+
+Starting every service, rather than one, is the check that pays. Two of the four defects below
+were found only because a service other than catalog was finally started in a cluster.
+
+**Read that evidence before treating this as production.** It is one replica of each store:
+one failure domain, no failover, an upgrade window that stops all five databases at once, and
+a Kafka broker whose volume holds undelivered events at replication factor 1. The production
+shape is managed instances, which is what `deploy/overlays/production-managed-data` selects —
+it deletes all four StatefulSets and repoints every endpoint. That overlay is rendered and
+checked, never deployed, because its endpoints are `REPLACE_ME` by design.
+
+Three defects in committed code surfaced only by running it, each invisible to
+`kubectl apply --dry-run=client`:
+
+- **Three of five migration Jobs crash-looped.** A Job runs the service's own image, so
+  Spring builds the service's whole context, but the Jobs carried none of the Secrets their
+  Deployments carry. The documented release procedure would have blocked on `kubectl wait`
+  for its full timeout. `ops/testing/migration-job.sh` missed it by exporting the credentials
+  in the shell first: it tests the migrate profile, never the Job manifest's env wiring.
+- **`JwtProperties` could not bind from environment variables**, so auth-service could not
+  start under Kubernetes or Compose. A public `getPrivateKey()` on a `@ConfigurationProperties`
+  JavaBean made the binder treat `security.jwt.private-key` as a property and call it partway
+  through binding. 41 platform-security tests passed throughout, all binding from properties —
+  never from the environment, which is the only form that triggers it.
+- **The Kafka StatefulSet hardcoded the `gocommerce` namespace** in its advertised listener,
+  which would have broken the pre-existing staging overlay.
+- **`embedding-service` could not start**: the manifest named a model with nothing on disk and
+  a read-only root filesystem, so every pod would try to download it into an unwritable home.
+  Worse, the download was unpinned — the weights, and therefore every search result, could
+  change without a deploy. The weights are now baked in at a pinned revision, with the build
+  verifying the same `model.safetensors` sha256 the search evaluation evidence records.
+
+What that adds up to: `kubectl apply -k k8s/` went from starting nothing to starting
+everything, and four of the defects in the way were invisible to `kubectl apply --dry-run`.
+
+## Chaos coverage beyond search (added 2026-09-09)
+
+`ops/testing/chaos-drill-cart.sh` covers the case the search drill does not: Redis as the
+system of record rather than as a cache. Evidence:
+`docs/evidence/chaos-cart-2026-09-09.json`.
+
+`CartService.getCart` does `findById(...).orElseGet(() -> new Cart(userId))`, where a miss
+legitimately means "no cart yet". The drill exists so that a connection failure can never be
+folded into that same path: a shopper with an intact cart would otherwise be shown an empty
+one, with 200 OK, no error, and nothing in any dashboard to say it happened. Measured: **500
+rather than a false empty cart, a slowest read of 2,026ms against roughly 60,000ms before the
+timeout, and the cart intact after recovery.** That is also the first verification of the
+cart-service Redis timeout, which until now was reasoned but undrilled.
+
+`ops/testing/chaos-drill-order.sh` covers the money path, where the faults demand different
+answers. Evidence: `docs/evidence/chaos-order-2026-09-09.json`. **PostgreSQL paused: 500, and no
+phantom order left behind** — the dangerous answer being a 2xx carrying an order id for a row
+that was never written. A subtler case now keeps PostgreSQL reachable for reads while making
+transactions read-only: checkout still returned 500, persisted nothing, and recovered to 201
+without restarting order-service. **Kafka paused: 201, checkout completed**, because the
+outbox exists so the broker is not a hard dependency of taking money; queued events drained
+when Kafka returned.
+
+`ops/testing/chaos-drill-gateway.sh` isolates the edge limiter from the search cache. With
+Redis stalled, three requests returned the upstream's non-empty 200 response and the slowest
+took 1,051ms; rate enforcement returned after Redis recovered. The explicit decision is to
+fail open for storefront reads, accepting that abuse protection is absent during the outage.
+
+Still unexercised: packet loss, progressively slow dependencies, and disk-full behavior.
+
+## The shop is deployable (added 2026-09-09)
+
+The frontend had no container, no Kubernetes manifest, and no Compose entry — it existed only
+as a Vite dev server in the README, so a cluster built from `k8s/` served nine APIs and nothing
+a shopper could open. It now has `frontend/Dockerfile` (nginx-unprivileged, read-only root),
+`k8s/frontend.yaml`, and ingress routing that sends `/api` to the gateway and everything else
+to the single-page app.
+
+One defect came out of it. `apiBase.js` read `VITE_API_BASE_URL || "http://localhost:8080"`,
+and `||` treats an empty string as unset — so the same-origin configuration that lets one image
+serve every environment would have compiled `localhost:8080` into the bundle, and every
+shopper's browser would have called their own machine. It reads `??` now, and the built bundle
+is asserted to contain zero occurrences of that host.
+
+The Compose service has now also run: Docker health became healthy, `/healthz` returned 200,
+and `/orders/1` returned the SPA shell with 200. That runtime check found a false-negative
+healthcheck because BusyBox resolved `localhost` to IPv6 while nginx listened on IPv4; the
+probe now targets `127.0.0.1`. Evidence: `docs/evidence/frontend-compose-2026-09-09.json`.
+
+## Local application benchmark and SLI plumbing (added 2026-09-09)
+
+The first benchmark against the real application is recorded in
+`docs/evidence/load-benchmark-2026-09-09.json`. With one search replica and 600 generated
+products, cold traffic sustained 25 requested RPS at p95 139ms, then missed a 40-RPS target
+and reached p95 6.05s. Five explicitly preloaded warm keys sustained 2,000 RPS; a 5,000-RPS
+target achieved 2,988 RPS and began returning transport errors. **These single-replica laptop
+numbers do not transfer to production.** The catalog and query distribution are synthetic,
+and the load generator shares the machine.
+
+Running the rules against real scraped metrics found two silent failures. Healthy operation
+had no 5xx series, so the error, availability, and budget recordings disappeared instead of
+showing 0/1/0; the rules now preserve a zero vector. Separately, the gateway search fallback
+returned a successful empty 200, hiding dependency failure from both shoppers and the 5xx
+SLI; it now returns 503. All five requested recordings then existed with sane values, and
+`GatewayErrorBudgetBurningFast` moved from pending to firing after its actual five-minute
+hold under a paused search dependency. This verifies SLI plumbing under synthetic local
+traffic; it does **not** measure a production SLO. Evidence:
+`docs/evidence/slo-machinery-2026-09-09.json`.
+
+## Journey load and AI-assessor agreement (added 2026-09-09)
+
+`ops/k6/shopper-journey.js` adds an explicitly invented 50/30/20 distribution over browse,
+search, cart, and completed checkout. It uses a real RS256 access token in application runs,
+requires exact 201 for checkout, and labels the single synthetic identity and mock payment
+limits. The harness ran every branch with zero failed synthetic steps; it is a contention
+workload, not a model of shopper traffic.
+
+The collapsed search test pool now has a second AI assessment over all 175 already judged
+test-split pairs. Exact agreement is 84.57% and linear-weighted Cohen's kappa is 0.7454; all
+27 disagreements are one grade apart. Both assessors are AI, and agreement is consistency,
+not accuracy. No human labels were created or claimed. Evidence:
+`docs/evidence/search-inter-assessor-agreement-2026-09-09.json`.
+
+## The drills now run (added 2026-09-10)
+
+Four drills existed and were wired to nothing: `chaos-drill-cart.sh`, `chaos-drill-order.sh`,
+`chaos-drill-gateway.sh` and `data-tier-deploy.sh`. CI and `ops/testing/verify-all.sh` invoked
+only the original search chaos drill, so those four would never have run again.
+
+That is the same failure the backup CronJob comment describes: a drill nobody runs is a
+document. Each of these already caught a real defect once — a false empty cart, a phantom
+order, an edge that stalls on a black-holed rate limiter, a deployment that could not start —
+and each of those defects would have returned silently.
+
+They now run in both places. The deployment drill is its own CI job gated on
+`vars.DEPLOYMENT_DRILL_ENABLED`, because it needs a cluster; it is declared rather than
+omitted so the gap is visible instead of the drill quietly never running anywhere.
+
+## Traffic model (added 2026-09-10)
+
+`ops/k6/traffic-model.json` states the assumed shape of shopper traffic — session mix, query
+head/tail split, think time, shopper isolation — in one file, so the assumptions can be argued
+with and replaced rather than being buried in `shopper-journey.js`. Its own `status` field
+reads `ASSUMED, NOT OBSERVED`.
+
+The correction that prompted it: the journey converted **20% of sessions to checkout** against
+a real e-commerce norm of roughly 1–3%. That overstates write load by about ten times. It is
+1.2% now.
+
+**The load benchmark is read-path only.** Every run in
+`docs/evidence/load-benchmark-2026-09-09.json` is `search-load.js` against `/search`; no cart
+or checkout write was exercised, so nothing there describes write capacity, database
+contention or outbox throughput. `shopper-journey.js` covers those and **has not been run**.
+That is the next benchmark worth taking.
+

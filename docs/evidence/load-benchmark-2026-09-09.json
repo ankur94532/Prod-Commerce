@@ -1,0 +1,148 @@
+{
+  "recorded_at_utc": "2026-09-09T17:21:14Z",
+  "item": "first load benchmark against the real search application",
+  "evidence_class": "local_synthetic_application_benchmark",
+  "runner": "grafana/k6:0.54.0, constant-arrival-rate, 30 seconds per point",
+  "hardware": {
+    "host": "Apple M4 Pro, 14 CPU cores, 51,539,607,552 bytes host memory, macOS 26.6.2",
+    "docker_desktop_vm": "14 CPUs, 8,216,887,296 bytes memory, aarch64",
+    "contention_note": "k6, Elasticsearch, Redis, and the embedding service shared the Docker Desktop VM; the Java services ran on the same laptop host."
+  },
+  "topology": "one catalog-service JVM, one search-service JVM, one PostgreSQL 16 container, one Elasticsearch 8.15.2 node, one Redis 7 container, and one pinned BAAI/bge-small-en-v1.5 embedding container",
+  "artifacts": {
+    "catalog_jar_sha256": "d7498cb8d765ffb9e5af6c2b3df347fcbf9b4aecf6d2b6c0f7d7fe7f60f1e972",
+    "search_jar_sha256": "887d4b798ff383cc09b80a4dbc157747014e1c5c5ba77be288a2046dd57c3ebd",
+    "embedding_model_safetensors_sha256": "3c9f31665447c8911517620762200d2245a2518d6e7208acc78cd9db317e21ad",
+    "debug_logging": false
+  },
+  "corpus": {
+    "products": 600,
+    "provenance": "generated seed catalog; not a real assortment",
+    "queries": 2000,
+    "query_seed": 42,
+    "query_corpus_sha256": "3fd7a4815243a34b8d57618923a97668f6c3c013d300bcfdfd9e1b81e68f37ac",
+    "query_set_sha256": "6fb89b864bcfb0c4a083236a5a9c1067bb698fa998d56c74044bef94af5f8d35",
+    "query_provenance": "catalog-derived synthetic queries; not shopper traffic"
+  },
+  "retrieval": {
+    "mode": "server default",
+    "page_size": 20,
+    "product_family_collapsing": true
+  },
+  "runs": [
+    {
+      "cache_regime": "cold",
+      "target_rps": 10,
+      "achieved_rps": 10.0287,
+      "requests": 301,
+      "p50_ms": 66.1791,
+      "p95_ms": 98.2593,
+      "p99_ms": 149.6059,
+      "error_rate": 0,
+      "zero_results": 0
+    },
+    {
+      "cache_regime": "cold",
+      "target_rps": 25,
+      "achieved_rps": 25.0313,
+      "requests": 751,
+      "p50_ms": 3.4881,
+      "p95_ms": 138.6329,
+      "p99_ms": 217.6217,
+      "error_rate": 0,
+      "zero_results": 0
+    },
+    {
+      "cache_regime": "cold",
+      "target_rps": 40,
+      "achieved_rps": 37.8322,
+      "requests": 1135,
+      "p50_ms": 2.8478,
+      "p95_ms": 6049.147,
+      "p99_ms": 6411.3298,
+      "error_rate": 0,
+      "zero_results": 0
+    },
+    {
+      "cache_regime": "warm_preloaded_5_keys",
+      "target_rps": 150,
+      "achieved_rps": 150.0182,
+      "requests": 4501,
+      "p50_ms": 1.224,
+      "p95_ms": 1.9638,
+      "p99_ms": 3.3519,
+      "error_rate": 0,
+      "zero_results": 0
+    },
+    {
+      "cache_regime": "warm_preloaded_5_keys",
+      "target_rps": 300,
+      "achieved_rps": 300.0018,
+      "requests": 9001,
+      "p50_ms": 1.1444,
+      "p95_ms": 1.8102,
+      "p99_ms": 3.0456,
+      "error_rate": 0,
+      "zero_results": 0
+    },
+    {
+      "cache_regime": "warm_preloaded_5_keys",
+      "target_rps": 1000,
+      "achieved_rps": 999.9711,
+      "requests": 30001,
+      "p50_ms": 0.9681,
+      "p95_ms": 1.617,
+      "p99_ms": 3.9659,
+      "error_rate": 0,
+      "zero_results": 0
+    },
+    {
+      "cache_regime": "warm_preloaded_5_keys",
+      "target_rps": 2000,
+      "achieved_rps": 1999.9118,
+      "requests": 60002,
+      "p50_ms": 1.004,
+      "p95_ms": 2.2992,
+      "p99_ms": 5.928,
+      "error_rate": 0,
+      "zero_results": 0
+    },
+    {
+      "cache_regime": "warm_preloaded_5_keys",
+      "target_rps": 5000,
+      "achieved_rps": 2988.4504,
+      "requests": 149861,
+      "p50_ms": 1.8723,
+      "p95_ms": 21.6533,
+      "p99_ms": 52.0313,
+      "error_rate": 0.000800742,
+      "zero_results": 0
+    },
+    {
+      "cache_regime": "warm_preloaded_5_keys",
+      "target_rps": 10000,
+      "achieved_rps": 4721.8624,
+      "requests": 281417,
+      "p50_ms": 49.1751,
+      "p95_ms": 101.4948,
+      "p99_ms": 135.4882,
+      "error_rate": 0.0004797152,
+      "zero_results": 0
+    }
+  ],
+  "observed_saturation": {
+    "cold": "The knee is between 25 and 40 requested RPS. At 40, target rate was missed and p95 rose from 139ms to 6049ms.",
+    "warm": "Two thousand requested RPS was sustained. At 5000, achieved rate fell to 2988 RPS and transport errors appeared; at 10000, k6 warned that its 1000-VU ceiling was exhausted, so service and co-located load-generator limits cannot be separated."
+  },
+  "discarded_runs": [
+    "Calibration with inherited DEBUG=release was discarded because Spring Boot enabled per-request debug logging.",
+    "High-rate runs called warm without preloading were discarded because empty Redis caused a startup cache stampede."
+  ],
+  "limits": [
+    "These numbers do not transfer to production: this is one replica per service, a 600-product generated catalog, one laptop, and a synthetic query distribution.",
+    "Read path only. Every run here is ops/k6/search-load.js against /search; no order, cart or checkout write was exercised, so nothing in this file describes write capacity, database contention or outbox throughput. ops/k6/shopper-journey.js covers those and has not been run.",
+    "Warm results are an optimistic cache-hit bound, not general search capacity.",
+    "Thirty-second points are exploratory and include a co-located load generator; they are not a capacity plan or performance regression gate.",
+    "The runs predate ops/k6/traffic-model.json. That model governs the journey script only, so it does not affect any number here, but a future journey benchmark must record the model version it used."
+  ]
+}

@@ -360,10 +360,19 @@ cp .env.example .env
 
 Update secrets and passwords in `.env`.
 
+An `.env` created before database-role isolation is missing five required values. Make sure
+it contains `AUTH_DB_PASSWORD`, `CATALOG_DB_PASSWORD`, `ORDER_DB_PASSWORD`,
+`ANALYTICS_DB_PASSWORD`, and `RECOMMENDATION_DB_PASSWORD`; `.env.example` documents all five.
+Validate the merged configuration before starting anything:
+
+```bash
+docker compose config --quiet
+```
+
 Start infrastructure:
 
 ```bash
-docker compose up -d postgres redis zookeeper kafka elasticsearch prometheus grafana otel-collector jaeger loki promtail
+docker compose up -d postgres redis kafka elasticsearch prometheus grafana otel-collector jaeger loki promtail
 ```
 
 Start the embedding service:

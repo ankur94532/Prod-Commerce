@@ -92,8 +92,42 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
-      - name: Run chaos drill
+      - name: Run chaos drill (search dependencies)
         run: ops/testing/chaos-drill.sh
+      # These three were written and then wired to nothing, so only the search drill would
+      # ever have run again. Each guards a failure that looks like success -- a false empty
+      # cart, a phantom order, an edge that stalls on a black-holed rate limiter -- and each
+      # already caught a real defect once. They run here so the next regression is caught by
+      # CI rather than by a shopper.
+      - name: Run chaos drill (cart store)
+        run: ops/testing/chaos-drill-cart.sh
+      - name: Run chaos drill (order money path)
+        run: ops/testing/chaos-drill-order.sh
+      - name: Run chaos drill (gateway rate limiter)
+        run: ops/testing/chaos-drill-gateway.sh
+
+  deployment-drill:
+    # Stands the whole system up from k8s/ in a self-deleting scratch namespace and checks
+    # that all ten deployments start and serve. It needs a cluster, so it is gated on one
+    # being configured rather than failing the build where none exists -- but it is declared
+    # here so the gap is visible instead of the drill simply never running anywhere.
+    name: Kubernetes deployment drill
+    runs-on: ubuntu-latest
+    if: vars.DEPLOYMENT_DRILL_ENABLED == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run deployment drill
+        run: ops/testing/data-tier-deploy.sh
+      # Same job, because it needs the same cluster: stand the system up, then drive real
+      # writes through it. The thresholds assert that no step failed, not that any particular
+      # throughput was reached -- CI hardware varies and a capacity number would be noise.
+      - name: Run journey benchmark (write path)
+        run: TARGET_RPS=5 BENCHMARK_DURATION=60s ops/testing/journey-benchmark.sh
 
   search-retrieval:
     # Retrieval contracts against a real Elasticsearch: filter parity across modes, sort

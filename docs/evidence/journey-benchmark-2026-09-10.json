@@ -1,0 +1,41 @@
+{
+  "recorded_at_utc": "2026-09-09T21:51:43.606378+00:00",
+  "item": "first write-path benchmark",
+  "evidence_class": "invented_synthetic_shopper_journey",
+  "runner": "ops/testing/journey-benchmark.sh, which stands the system up with the deployment drill (7 checks pass inside this run), seeds 1000 products, reindexes search, and drives ops/k6/shopper-journey.js through api-gateway from inside the cluster",
+  "why_this_exists": "docs/evidence/load-benchmark-2026-09-09.json measures reads only. Until this run, no cart write, order write or outbox row had ever been produced under load, so nothing described write capacity or contention.",
+  "topology": "one replica of each of the ten services in a scratch Kubernetes namespace on docker-desktop, with in-cluster PostgreSQL, Redis, Elasticsearch and Kafka, all single-node",
+  "traffic_shape": "ops/k6/traffic-model.json, whose every parameter is assumed rather than observed: 1.2% of sessions complete checkout, 3.8% add to cart, think time 1-8s, 20 distinct shoppers each with their own token",
+  "run": {
+    "target_journeys_per_second": 8,
+    "duration": "90s",
+    "artifacts": "ops/k6/results/journey-20260909T214655Z/k6-output.txt (local only: ops/k6/results/*/ is gitignored, because every run writes a new timestamped directory of raw k6 output. The findings are in this file; rerun the benchmark to regenerate the raw log.)"
+  },
+  "results": {
+    "http_requests": 1013,
+    "failed_rate": 0,
+    "step_failed_rate": 0,
+    "browse_attempts": 683,
+    "search_attempts": 250,
+    "cart_attempts": 40,
+    "checkout_attempts": 40,
+    "latency_ms": {
+      "med": 8.236,
+      "p95": 225.68295,
+      "p99": 464.3122889199997
+    }
+  },
+  "reading": "1013 requests across 683 browses, 250 searches, 40 cart writes and 40 checkouts, with a 0% step failure rate and p95 226ms end to end. Every cart write that was attempted completed, and every cart that was filled checked out.",
+  "defects_this_run_found": [
+    "The journey's session sampler, (VU * prime + ITER) % 1000, is deterministic but not uniform at these scales: with about fifty virtual users it visits only ~50 of 1000 residues and never fell below the 1.2% conversion threshold. 930 iterations produced zero checkouts while the run reported success -- a write benchmark that never wrote. Replaced with a hashed bucket, verified to reach the branch before being trusted.",
+    "Every cart write returned 403. The benchmark minted one token whose subject was 'load-shopper' while the journey acted as 'load-shopper-<n>', and CartController correctly refuses one user access to another's cart. The authorisation check was working; the load generator was wrong. Fixed by minting one token per synthetic shopper, which is also what real sessions look like.",
+    "k8s/seeds/job.yaml carried no Secrets at all, so seeding crash-looped on an unresolved INTERNAL_SERVICE_TOKEN. This is the same defect fixed earlier in k8s/migrations/jobs.yaml; it survived because that fix was applied to the migration Jobs and the neighbouring file was never checked. Every kind: Job in the repository has now been audited."
+  ],
+  "limits": [
+    "These numbers do not transfer to production: one laptop, one replica per service, a generated 1000-product catalog, and a traffic shape whose parameters are assumed.",
+    "8 journeys/second for 90 seconds is an exploratory point, not a saturation search. Nothing here establishes where the write path degrades.",
+    "The payment provider is the in-process mock, so checkout latency excludes a real processor round trip, which in production usually dominates it.",
+    "The outbox was not observed draining under load; that it drains after a broker outage is covered separately by ops/testing/chaos-drill-order.sh.",
+    "Nothing here has been deployed."
+  ]
+}

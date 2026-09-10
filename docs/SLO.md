@@ -29,13 +29,12 @@ secret. **Until that secret exists, no alert reaches anyone.**
 
 - **Payment success rate.** The payment provider is a mock. Any number computed from it
   describes the mock, not a payment processor.
-- **Search relevance.** No graded evaluation run exists yet. See
-  `backend/search-service/evaluation/README.md`; the existing catalog-derived metrics are
-  synthetic regression evidence, not shopper relevance.
-- **Throughput.** The load harness now declares its cache regime and draws from a seeded
-  query set, so a measurement is possible — but none has been taken against the application.
-  A requests-per-second target needs measured numbers first, and a warm-regime figure would
-  be an upper bound rather than a capacity.
+- **Search relevance.** AI-judged exploratory runs exist, including a second-AI agreement
+  check. They use a generated catalog and AI-authored queries and are not shopper relevance
+  or human judgments.
+- **Throughput.** A first local application benchmark now exists, but one replica per service,
+  a 600-product generated catalog, a laptop, and synthetic queries are not a capacity model.
+  The warm-regime measurements are optimistic cache-hit bounds, not a production target.
 
 ## Honest limits of these numbers
 

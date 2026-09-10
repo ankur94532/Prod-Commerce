@@ -6,17 +6,24 @@ been deployed.
 
 ## Status
 
-Phase 2 (independent graded search evaluation and retrieval ablations) is **implemented and
-verified at the harness/contract level**. No graded run has been collected and no relevance
-number has been produced. Evidence: `docs/evidence/search-evaluation-2026-09-09.json`.
+Phase 2 (independent graded search evaluation and retrieval ablations) is **implemented, and
+three graded runs have been collected and scored with AI labels**. Every number is an
+`ai_judged_pooled_evaluation` over a generated catalog and AI-authored queries — describe it
+that way and never as human relevance judgments. Evidence:
+`docs/evidence/search-evaluation-2026-09-09.json` (harness),
+`search-evaluation-ai-judged-2026-09-09.json` (first graded run, embedding stub), and
+`search-collapse-and-embeddings-2026-09-09.json` (real model, collapse A/B).
 
-Verified locally, all passing:
+Verified locally, all passing (2026-09-09, `mvn -f backend/pom.xml test` with
+`SEARCH_TEST_ES_ADDRESS` pointed at a disposable elasticsearch:8.15.2):
 
 | Suite | Command | Result |
 | --- | --- | --- |
-| Elasticsearch retrieval contracts | `ops/testing/search-retrieval.sh` | 22 executions, 0 skipped |
-| search-service unit and API | `mvn -f backend/pom.xml -pl search-service -am test` | 53 search tests (38 run + 15 Docker-gated skips) |
-| Graded-evaluation harness | `ops/testing/search-evaluation.sh` | 104 tests, 0 skipped |
+| Whole backend | `mvn -f backend/pom.xml test` | 309 run, 0 failures, 37 skipped (Docker/PostgreSQL-gated) |
+| search-service incl. Elasticsearch contracts | `mvn -f backend/pom.xml -pl search-service -am test` | 78 run, 0 skipped |
+| Graded-evaluation harness | `ops/testing/search-evaluation.sh` | 119 tests, 0 skipped |
+
+Two graded runs now exist; see "Result collapsing and real embeddings" below.
 
 The earlier `SearchRetrievalElasticsearchTest` compile failure (ambiguous
 `ElasticsearchOperations.search` overload) is fixed by casting the answer's first argument
@@ -92,6 +99,51 @@ collector require identical retrieval metadata across every query in a run.
    defense-in-depth.
 5. Then move to durable indexing and atomic reindexing (aliases), reproducible load testing,
    security, observability — in that order, per the reliability handoff.
+
+## Result collapsing and real embeddings (added 2026-09-09)
+
+Evidence: `docs/evidence/search-collapse-and-embeddings-2026-09-09.json`. Runs:
+`backend/search-service/evaluation/runs/2026-09-09-b-uncollapsed` and `-c-collapsed`, which
+differ only in `search.collapse.enabled` against the same corpus, queries, model and
+judgments. Reproduce either with `COLLAPSE=false|true ops/evaluation/collect-run.sh <out>`.
+
+**The embedding stub is gone.** `collect-run.sh` runs `backend/embedding-service` with the
+checked-out BAAI/bge-small-en-v1.5 weights and refuses to start without them, recording the
+`model.safetensors` sha256 in the manifest. Earlier vector and hybrid numbers measured a
+bag-of-words hashing stub and are **not** a baseline for anything measured since.
+
+**What the catalog now owns.** `products.product_family` (migration V3) groups a product with
+its variants; the entity defaults it to the slug on persist, the API publishes it, and search
+indexes it. Search derives it from the slug only for rows written before that column existed,
+and that derivation is a documented heuristic.
+
+**What collapsing does and does not buy.** Redundant slots per page went from 6.0–6.9 to 0.0
+and distinct products shown from 2.2–4.0 to 4.1–9.8. Mean NDCG@10 fell (0.56→0.50 text,
+0.83→0.64 vector, 0.75→0.69 RRF) and precision@10 from 0.23 to 0.05. Part of that is a metric
+artifact — six colours of the right product are six independently relevant results, and the
+pooled NDCG ideal shrinks with the page — which is exactly why `distinct_families@k`,
+`redundant_results@k` and `distinct_relevant_families@k` are now computed from the catalog
+grouping and need no judgments. The residual is real: freed slots get filled with weaker
+matches. **Collapsing is a defensible default, not a measured win. Do not describe it as
+one.** The missing piece is `inner_hits`, so a collapsed row can show its own variants.
+
+**Four defects this exercise found**, each of which passed every test beforehand:
+`CatalogSeeder` never copied `productFamily`, making collapsing a silent no-op; the seed
+catalog gave families only to variants; the cleanup traps in `collect-run.sh` and
+`chaos-drill.sh` aborted halfway under `set -e`, leaking an Elasticsearch container per
+aborted run and exiting 143 on success; and a stalled (rather than crashed) Redis made a single
+search take 120,035ms — the cache read and the cache write each waiting out Lettuce's
+60-second default — which the drill's availability-only check scored as a pass.
+`spring.data.redis.timeout` is now 250ms in search-service and the drill asserts a latency
+budget with the cache stalled: **524ms with the fix, 120,035ms with the default restored,
+budget 5,000ms**, so the check is not vacuous. api-gateway (1s) and cart-service (2s) had
+the same unbounded default and are now bounded too — **those two are not drill-verified.**
+
+**Judgments carry forward** with `graded_eval.py carry-forward`, which moves a grade to a new
+run only when the queries are byte-identical and the product content a reviewer saw is
+unchanged, records the pool it came from, and refuses when a newly published product field is
+not declared with `--allow-new-field`. `productFamily` is in `DERIVED`, so reviewers never see
+the ranker's grouping.
 
 ## Verified old evaluation facts
 

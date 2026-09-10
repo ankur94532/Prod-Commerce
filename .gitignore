@@ -53,3 +53,7 @@ ops/alertmanager/secrets/*-url
 # Generated load-test inputs and outputs; rebuild with ops/k6/build-query-set.py
 ops/k6/query-set.json
 ops/k6/results/*.json
+# Benchmark runs write a timestamped directory of raw output. The findings live in
+# docs/evidence/; the raw logs are local artifacts and would otherwise be committed on
+# every run.
+ops/k6/results/*/

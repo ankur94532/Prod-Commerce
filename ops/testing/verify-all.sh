@@ -68,7 +68,19 @@ run "Ordered deployment procedure"      ops/testing/deploy-procedure.sh
 run "Search retrieval (Elasticsearch)"  ops/testing/search-retrieval.sh
 run "Graded evaluation harness"         ops/testing/search-evaluation.sh
 run "Load-test harness"                 ops/testing/load-harness.sh
-run "Chaos drill (dependency faults)"   ops/testing/chaos-drill.sh
+run "Chaos drill (search dependencies)"  ops/testing/chaos-drill.sh
+# The other three chaos drills and the deployment drill were written but wired to nothing,
+# so only the search one would ever have run again. A drill nobody runs is a document: the
+# defects these guard against -- a false empty cart, a phantom order, a deployment that
+# cannot start -- come back silently once nothing checks for them.
+run "Chaos drill (cart store)"          ops/testing/chaos-drill-cart.sh
+run "Chaos drill (order money path)"    ops/testing/chaos-drill-order.sh
+run "Chaos drill (gateway limiter)"     ops/testing/chaos-drill-gateway.sh
+run "Kubernetes deployment drill"       ops/testing/data-tier-deploy.sh
+# The write path end to end. Not a capacity gate -- the numbers vary with the machine --
+# but "every cart write and every checkout succeeded" is a real assertion, and it is the
+# only check here that exercises a write under concurrency.
+run "Journey benchmark (write path)"    ops/testing/journey-benchmark.sh
 run "Point-in-time recovery drill"      ops/backup/pitr-drill.sh
 run "Backup retention policy"           ops/testing/backup-retention.sh
 run "Frontend tests"                    frontend_tests
