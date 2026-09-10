@@ -1,0 +1,20 @@
+{
+  "recorded_at_utc": "2026-09-09T18:05:54Z",
+  "item": "second AI assessment and inter-assessor agreement",
+  "evidence_class": "ai_judged_pooled_evaluation",
+  "run": "backend/search-service/evaluation/runs/2026-09-09-c-collapsed",
+  "pool_id": "5c6226e0f53a13355e18c236fdb912d5cc672037133140060bb39717c46037c3",
+  "assessors": {
+    "first": {"id": "claude-opus-5", "type": "ai"},
+    "second": {"id": "openai-codex-gpt-5-strict-evidence-v1", "type": "ai", "method": "Codex read shopper-graded-v1 and the blinded test-split pool, then applied a strict evidence-only shopper-advocate interpretation. Missing required evidence was capped at grade 1. Existing grades were not used as grading input; serialization was deterministic after the AI decisions were made."}
+  },
+  "agreement": {"shared_pairs":175,"pool_pairs":345,"coverage":0.5072463768,"exact_agreement":0.8457142857,"linear_weighted_cohen_kappa":0.7454339745,"absolute_grade_delta":{"0":148,"1":27,"2_or_more":0}},
+  "second_assessor_test_metrics": {
+    "text": {"pooled_ndcg_at_10":0.5441432901,"precision_at_10":0.0428571429,"pooled_recall_at_10":0.5625,"mrr_at_10":0.3303571429,"ndcg_scorable_queries":12},
+    "vector": {"pooled_ndcg_at_10":0.5753264122,"precision_at_10":0.0571428571,"pooled_recall_at_10":0.8125,"mrr_at_10":0.4553571429,"ndcg_scorable_queries":12},
+    "hybrid": {"pooled_ndcg_at_10":0.5553623266,"precision_at_10":0.0428571429,"pooled_recall_at_10":0.5625,"mrr_at_10":0.3303571429,"ndcg_scorable_queries":12},
+    "hybrid_rrf": {"pooled_ndcg_at_10":0.6879277990,"precision_at_10":0.05,"pooled_recall_at_10":0.6875,"mrr_at_10":0.4285714286,"ndcg_scorable_queries":12}
+  },
+  "artifacts": ["judgments.codex-gpt-5.jsonl", "judgments.agreement.ai.jsonl", "agreement.ai.json", "report.test.codex-gpt-5.json"],
+  "limits": ["Both assessors are AI; no human labels were created or claimed.", "Kappa measures consistency, not accuracy or truth.", "Only the 175 already judged test-split pairs were double-judged; coverage of the full dev+test pool is 50.72%.", "The catalog and queries are generated/AI-authored, not real assortment or shopper traffic."]
+}

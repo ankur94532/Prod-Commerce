@@ -167,6 +167,7 @@ public class ProductService {
                 p.getBrand(),
                 p.getImageUrls(),
                 p.getStockQuantity(),
-                p.getAttributes());
+                p.getAttributes(),
+                p.getProductFamily());
     }
 }

@@ -18,6 +18,8 @@ public class ProductResponse {
     private List<String> imageUrls;
     private Integer stockQuantity;
     private Map<String, String> attributes;
+    /** Identifies the variants of one product; search collapses result pages on it. */
+    private String productFamily;
 
     public ProductResponse() {
     }
@@ -32,7 +34,8 @@ public class ProductResponse {
             String brand,
             List<String> imageUrls,
             Integer stockQuantity,
-            Map<String, String> attributes) {
+            Map<String, String> attributes,
+            String productFamily) {
         this.id = id;
         this.slug = slug;
         this.name = name;
@@ -44,6 +47,7 @@ public class ProductResponse {
         this.imageUrls = imageUrls;
         this.stockQuantity = stockQuantity;
         this.attributes = attributes;
+        this.productFamily = productFamily;
     }
 
     public Long getId() {
@@ -132,5 +136,13 @@ public class ProductResponse {
 
     public void setAttributes(Map<String, String> attributes) {
         this.attributes = attributes;
+    }
+
+    public String getProductFamily() {
+        return productFamily;
+    }
+
+    public void setProductFamily(String productFamily) {
+        this.productFamily = productFamily;
     }
 }

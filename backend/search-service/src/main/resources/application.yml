@@ -13,6 +13,18 @@ spring:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
       database: ${SPRING_DATA_REDIS_DATABASE:2}
+      # Lettuce defaults to a 60-second command timeout. The chaos drill measured what that
+      # means: a Redis that stops answering but keeps the connection open -- an overloaded
+      # instance or a network partition, not a crash -- made one search take 120,035ms, because
+      # the cache read and the cache write each waited out the full minute. The code already
+      # treats a cache failure as a miss, but a hang is not a failure, so it never reached
+      # that path.
+      #
+      # A cache read from an adjacent Redis is sub-millisecond. 250ms is far beyond any
+      # healthy response and far below anything a shopper would wait for. Measured with the
+      # cache stalled: 524ms end to end, against 120,035ms on the default.
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:250ms}
+      connect-timeout: ${SPRING_DATA_REDIS_CONNECT_TIMEOUT:500ms}
 
 catalog:
   base-url: ${CATALOG_BASE_URL:http://localhost:8082}
@@ -36,6 +48,12 @@ search:
   rrf:
     candidate-window: ${SEARCH_RRF_CANDIDATE_WINDOW:100}
     rank-constant: ${SEARCH_RRF_RANK_CONSTANT:60}
+  collapse:
+    # One result per product family, so a page cannot fill with six colours of one item.
+    # Switchable because it changes what a page means: the evaluation harness runs both
+    # settings against the same corpus, and neither is asserted to be better without that.
+    enabled: ${SEARCH_COLLAPSE_ENABLED:true}
+    field: ${SEARCH_COLLAPSE_FIELD:productFamily}
   indexing:
     batch-size: ${SEARCH_INDEXING_BATCH_SIZE:128}
 

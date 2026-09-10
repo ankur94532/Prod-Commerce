@@ -16,11 +16,15 @@ cd "$repo_root"
 OUT="${1:-backend/search-service/evaluation/runs/$(date -u +%Y%m%dT%H%M%SZ)}"
 SEED_SIZE="${SEED_SIZE:-600}"
 DEPTH="${DEPTH:-10}"
+# Result collapsing is the change being measured, so it is a knob here rather than an
+# assumption: COLLAPSE=false reproduces the uncollapsed baseline against the same corpus,
+# the same queries and the same model.
+COLLAPSE="${COLLAPSE:-true}"
 
 suffix="$$"
 pg="eval-pg-$suffix"; es="eval-es-$suffix"; redis="eval-redis-$suffix"
 work="$(mktemp -d)"
-catalog_pid=""; search_pid=""; stub_pid=""
+catalog_pid=""; search_pid=""; embedding=""; cleaned=0
 
 # Keep the service logs when something fails; the failure is usually only visible there.
 keep_logs() {
@@ -31,12 +35,26 @@ keep_logs() {
 }
 
 cleanup() {
+  # A cleanup that stops halfway is worse than none, and this one did. Under `set -e`, a
+  # false `[ -n "$pid" ]` test -- or a `wait` on a process the function had just killed,
+  # which returns 143 -- ended the trap early. The containers below were never removed, so
+  # every aborted run leaked a gigabyte-sized Elasticsearch, and a run that had actually
+  # succeeded exited 143.
+  #
+  # Hence: capture the real status first, refuse to re-enter, turn errexit off for the
+  # duration, and never block on a process being torn down. Returning rather than calling
+  # exit leaves the script's own status intact.
+  local status=$?
+  [ "$cleaned" = 1 ] && return
+  cleaned=1
+  set +e
   [ "${succeeded:-0}" = "1" ] || keep_logs
-  for pid in "$search_pid" "$catalog_pid" "$stub_pid"; do
-    [ -n "$pid" ] && kill "$pid" 2>/dev/null && wait "$pid" 2>/dev/null
+  for pid in "$search_pid" "$catalog_pid"; do
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null
   done
-  docker rm -f "$pg" "$es" "$redis" >/dev/null 2>&1 || true
+  docker rm -f "$pg" "$es" "$redis" "${embedding:-}" >/dev/null 2>&1
   rm -rf "$work"
+  return "$status"
 }
 trap cleanup EXIT
 
@@ -60,83 +78,43 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 
-cat > "$work/embedding_stub.py" <<'STUB'
-import hashlib, http.server, json, math, socketserver, sys
-DIMENSIONS = 384
-def embed(text):
-    # Deterministic bag-of-words hashing, the same idea as the in-process fallback: similar
-    # wording lands in similar directions. It is not a trained model and makes no semantic
-    # claim; it exists so the vector path is exercised end to end.
-    vector = [0.0] * DIMENSIONS
-    for token in (text or '').lower().split():
-        digest = hashlib.sha256(token.encode()).digest()
-        index = int.from_bytes(digest[:4], 'big') % DIMENSIONS
-        vector[index] += 1.0
-    norm = math.sqrt(sum(v * v for v in vector)) or 1.0
-    return [v / norm for v in vector]
-class Handler(http.server.BaseHTTPRequestHandler):
-    # HTTP/1.0 closes the connection after each response, which the client sees as a write
-    # failure part-way through a batch. Keep-alive with an explicit Content-Length is what
-    # a real service would do.
-    protocol_version = 'HTTP/1.1'
-    def log_message(self, *args): pass
-    def _send(self, payload):
-        body = json.dumps(payload).encode()
-        self.send_response(200); self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body)
-    def do_GET(self):
-        self._send({"status": "ok", "model": "hashing-stub", "dimensions": DIMENSIONS})
-    def do_POST(self):
-        try:
-            # The client streams the batch with chunked transfer encoding, so there is no
-            # Content-Length to read. Reading zero bytes made every batch look like an empty
-            # request, which the stub then answered with a single embedding -- and the client
-            # correctly rejected the mismatched response.
-            raw = b''
-            if 'chunked' in (self.headers.get('Transfer-Encoding') or '').lower():
-                while True:
-                    size_line = self.rfile.readline().strip()
-                    if not size_line:
-                        break
-                    size = int(size_line.split(b';')[0], 16)
-                    if size == 0:
-                        self.rfile.readline()
-                        break
-                    while size > 0:
-                        chunk = self.rfile.read(size)
-                        if not chunk:
-                            break
-                        raw += chunk
-                        size -= len(chunk)
-                    self.rfile.readline()
-            else:
-                length = int(self.headers.get('Content-Length', 0))
-                while len(raw) < length:
-                    chunk = self.rfile.read(length - len(raw))
-                    if not chunk:
-                        break
-                    raw += chunk
-            payload = json.loads(raw or b'{}')
-            texts = payload.get('texts') or [payload.get('text', '')]
-            vectors = [embed(t) for t in texts]
-            with open(sys.argv[2], 'a') as audit:
-                audit.write(f"asked={len(texts)} returned={len(vectors)} dims={len(vectors[0]) if vectors else 0}\n")
-            self._send({"embeddings": vectors, "embedding": vectors[0],
-                        "model": "hashing-stub", "dimensions": DIMENSIONS})
-        except Exception as error:            # answer, rather than dropping the connection
-            body = json.dumps({"error": str(error)}).encode()
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-class Server(socketserver.ThreadingTCPServer):
-    allow_reuse_address = True; daemon_threads = True; request_queue_size = 256
-Server(('127.0.0.1', int(sys.argv[1])), Handler).serve_forever()
-STUB
-embedding_port="$(free_port)"
-python3 "$work/embedding_stub.py" "$embedding_port" "$work/embedding.log" &
-stub_pid=$!
+# The real embedding model, not a stand-in.
+#
+# Earlier runs used a bag-of-words hashing stub here. It kept the vector path exercised, but
+# it has no notion of meaning, so every number the vector and hybrid modes produced measured
+# the stub rather than semantic retrieval -- and reporting those as retrieval quality would
+# have been a fabricated result. This runs backend/embedding-service with the checked-out
+# BAAI/bge-small-en-v1.5 weights and refuses to start without them, because a quiet fallback
+# to the stub is exactly the failure that makes a benchmark dishonest.
+model_dir="${EMBEDDING_MODEL_DIR:-$repo_root/models/bge-small-en-v1.5}"
+[ -f "$model_dir/model.safetensors" ] || {
+  echo "FAIL: no embedding weights at $model_dir" >&2
+  echo "      Fetch BAAI/bge-small-en-v1.5 into models/, or set EMBEDDING_MODEL_DIR." >&2
+  echo "      This run will not substitute a stub: the vector scores would be meaningless." >&2
+  exit 1; }
+model_digest="$(shasum -a 256 "$model_dir/model.safetensors" | cut -d' ' -f1)"
+
+embedding_image="${EMBEDDING_IMAGE:-prod-commerce-embedding-service:latest}"
+docker image inspect "$embedding_image" >/dev/null 2>&1 || {
+  echo "Building $embedding_image"
+  docker build -q -t "$embedding_image" backend/embedding-service >/dev/null; }
+
+embedding="eval-embedding-$suffix"
+docker run --rm -d --name "$embedding" -p 127.0.0.1::8090 \
+  -v "$model_dir:/models/bge-small-en-v1.5:ro" \
+  -e EMBEDDING_MODEL_PATH=/models/bge-small-en-v1.5 "$embedding_image" >/dev/null
+embedding_port="$(docker port "$embedding" 8090/tcp | cut -d: -f2)"
+for _ in $(seq 1 120); do
+  curl -sf "http://127.0.0.1:${embedding_port}/health" >/dev/null 2>&1 && break
+  sleep 2
+done
+# Assert the service loaded the weights rather than falling back to a download or a name it
+# could not resolve; a health check that only says "ok" would hide that.
+embedding_health="$(curl -sf "http://127.0.0.1:${embedding_port}/health" || true)"
+echo "$embedding_health" | grep -q '/models/bge-small-en-v1.5' || {
+  echo "FAIL: embedding service did not load the local weights: ${embedding_health:-no response}" >&2
+  docker logs "$embedding" 2>&1 | tail -20 >&2; exit 1; }
+echo "Embedding service ready (${model_digest:0:12})"
 
 catalog_jar="$(ls backend/catalog-service/target/catalog-service-*.jar 2>/dev/null | grep -v sources | head -1 || true)"
 search_jar="$(ls backend/search-service/target/search-service-*.jar 2>/dev/null | grep -v sources | head -1 || true)"
@@ -196,6 +174,7 @@ SPRING_ELASTICSEARCH_URIS="http://127.0.0.1:${es_port}" \
 SPRING_DATA_REDIS_HOST=127.0.0.1 SPRING_DATA_REDIS_PORT="$redis_port" \
 EMBEDDING_SERVICE_BASE_URL="http://127.0.0.1:${embedding_port}" \
 SEARCH_INDEXING_BATCH_SIZE=32 SEARCH_HTTP_READ_TIMEOUT=30s SEARCH_HTTP_CONNECT_TIMEOUT=5s \
+SEARCH_COLLAPSE_ENABLED="$COLLAPSE" \
 CATALOG_SERVICE_URL="http://127.0.0.1:${catalog_port}" \
 CATALOG_BASE_URL="http://127.0.0.1:${catalog_port}" \
 RECOMMENDATION_BASE_URL="http://127.0.0.1:1" \
@@ -227,9 +206,10 @@ evaluation=backend/search-service/evaluation
 cat > "$work/config.json" <<CONFIG
 {
   "index_identity": "disposable elasticsearch:8.15.2, single node, index rebuilt for this run",
-  "embedding_model": "hashing-stub (deterministic bag-of-words, not a trained model)",
-  "embedding_revision": "ops/evaluation/collect-run.sh embedded stub",
+  "embedding_model": "BAAI/bge-small-en-v1.5 (384-dim, normalized, served by backend/embedding-service)",
+  "embedding_revision": "model.safetensors sha256 ${model_digest}",
   "cache_regime": "redis started empty for this run; each query issued once per mode",
+  "retrieval_regime": "result collapsing on productFamily: ${COLLAPSE}",
   "corpus_provenance": "generated seed catalog of ${SEED_SIZE} products, not a real assortment"
 }
 CONFIG

@@ -63,9 +63,18 @@ public class SearchDtos {
             String thumbnailUrl
     ) {}
 
+    /**
+     * What actually produced this page, echoed back so a caller -- the evaluation harness
+     * above all -- can tell whether the retrieval configuration moved underneath it.
+     *
+     * {@code collapseField} is null when result collapsing is off. When it is set, one hit
+     * stands for one product family rather than one document, and {@code total} counts
+     * families, so a client must not treat the two runs as comparable.
+     */
     public record RetrievalInfo(String mode, String algorithm, String totalRelation,
                                 int candidateWindow, int rrfRankConstant,
-                                double keywordWeight, double vectorWeight) {}
+                                double keywordWeight, double vectorWeight,
+                                String collapseField) {}
 
     public record SearchResponse(
             List<SearchResultItem> items,

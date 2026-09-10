@@ -11,7 +11,7 @@ import pathlib
 import tempfile
 import unittest
 
-from support import graded_eval, RETRIEVAL, CATALOG, QUERIES
+from support import graded_eval, RETRIEVAL, COLLAPSED_RETRIEVAL, CATALOG, QUERIES
 
 
 def response(ids, mode='text', depth=3, total=None, **overrides):
@@ -76,6 +76,37 @@ class MetricMathTest(unittest.TestCase):
     def test_duplicate_result_ids_are_refused(self):
         with self.assertRaisesRegex(ValueError, 'Duplicate result IDs'):
             graded_eval.metrics(['a', 'a'], {'a': 3}, 2)
+
+    def test_redundancy_counts_the_slots_a_variant_page_wastes(self):
+        families = {'a': 'bag', 'b': 'bag', 'c': 'bag', 'd': 'lamp'}
+        result = graded_eval.metrics(['a', 'b', 'c'], {'a': 3, 'b': 3, 'c': 3, 'd': 3}, 3, families)
+        self.assertEqual(result['distinct_families@3'], 1)
+        self.assertEqual(result['redundant_results@3'], 2)
+        self.assertEqual(result['distinct_relevant_families@3'], 1)
+
+    def test_ndcg_and_precision_cannot_see_redundancy_which_is_why_it_is_measured(self):
+        # Not a property of these fixtures but of the metrics: three colours of one bag and
+        # three different relevant products score identically on every judged metric, and
+        # differ only on the counts above. If this ever stops holding, the redundancy
+        # measures are no longer telling us something the others miss.
+        judgments = {'a': 3, 'b': 3, 'c': 3, 'x': 3, 'y': 3, 'z': 3}
+        families = {'a': 'bag', 'b': 'bag', 'c': 'bag', 'x': 'bag', 'y': 'lamp', 'z': 'desk'}
+        variants = graded_eval.metrics(['a', 'b', 'c'], judgments, 3, families)
+        distinct = graded_eval.metrics(['x', 'y', 'z'], judgments, 3, families)
+        for key in ('pooled_ndcg@3', 'precision@3', 'pooled_recall@3', 'mrr@3'):
+            self.assertEqual(variants[key], distinct[key], key)
+        self.assertEqual(variants['redundant_results@3'], 2)
+        self.assertEqual(distinct['redundant_results@3'], 0)
+
+    def test_redundancy_is_omitted_when_the_catalog_has_no_grouping(self):
+        result = graded_eval.metrics(['a'], {'a': 3}, 1)
+        self.assertNotIn('distinct_families@1', result)
+
+    def test_distinct_relevant_families_ignores_irrelevant_results(self):
+        families = {'a': 'bag', 'b': 'lamp', 'c': 'desk'}
+        result = graded_eval.metrics(['a', 'b', 'c'], {'a': 3, 'b': 0, 'c': 1}, 3, families)
+        self.assertEqual(result['distinct_families@3'], 3)
+        self.assertEqual(result['distinct_relevant_families@3'], 1)
 
     def test_mean_present_skips_nulls_without_counting_them_as_zero(self):
         self.assertAlmostEqual(graded_eval.mean_present([1.0, None, 0.0]), 0.5)
@@ -329,6 +360,46 @@ class ResponseContractTest(unittest.TestCase):
         payload['retrieval']['totalRelation'] = 'candidate_union'
         with self.assertRaisesRegex(ValueError, 'Unknown total relation'):
             graded_eval.validate_response(payload, 'text', 3)
+
+    def test_collapsed_runs_are_accepted_and_pinned_by_their_own_relation(self):
+        # Collapsing is a legitimate configuration, not drift: the harness scores it, but
+        # only when the server's own metadata says the totals now count families.
+        payload = response(['a', 'b'])
+        payload['retrieval'] = dict(COLLAPSED_RETRIEVAL['text'])
+        self.assertEqual(graded_eval.validate_response(payload, 'text', 3), ['a', 'b'])
+
+    def test_collapsed_and_uncollapsed_relations_are_not_interchangeable(self):
+        # The failure this catches: collapsing switched on (or off) between two runs while
+        # the reported relation stayed put, making two different experiments look comparable.
+        collapsed_claiming_documents = response(['a'])
+        collapsed_claiming_documents['retrieval'] = dict(COLLAPSED_RETRIEVAL['text'])
+        collapsed_claiming_documents['retrieval']['totalRelation'] = 'exact'
+        with self.assertRaisesRegex(ValueError, 'Unknown total relation'):
+            graded_eval.validate_response(collapsed_claiming_documents, 'text', 3)
+
+        uncollapsed_claiming_groups = response(['a'])
+        uncollapsed_claiming_groups['retrieval']['totalRelation'] = 'collapsed_groups_approximate'
+        with self.assertRaisesRegex(ValueError, 'Unknown total relation'):
+            graded_eval.validate_response(uncollapsed_claiming_groups, 'text', 3)
+
+    def test_collapse_field_must_name_a_field_or_be_absent(self):
+        payload = response(['a'])
+        payload['retrieval']['collapseField'] = ''
+        with self.assertRaisesRegex(ValueError, 'Invalid collapse field'):
+            graded_eval.validate_response(payload, 'text', 3)
+
+    def test_collapsed_totals_within_the_exact_range_still_catch_truncation(self):
+        # Cardinality is exact below Elasticsearch's precision threshold, so a collapsed page
+        # that claims more families than it returned is still a truncated response, not an
+        # estimate. Above the threshold the same shortfall is accepted as an estimate.
+        payload = response(['a'], total=3)
+        payload['retrieval'] = dict(COLLAPSED_RETRIEVAL['text'])
+        with self.assertRaisesRegex(ValueError, 'Truncated response'):
+            graded_eval.validate_response(payload, 'text', 3)
+
+        estimated = response(['a'], total=graded_eval.CARDINALITY_EXACT_BELOW + 1)
+        estimated['retrieval'] = dict(COLLAPSED_RETRIEVAL['text'])
+        self.assertEqual(graded_eval.validate_response(estimated, 'text', 3), ['a'])
 
     def test_rrf_window_must_cover_the_collection_depth(self):
         payload = response(['a'], mode='hybrid_rrf')

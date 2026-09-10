@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-09-09T13:36:35.031403+00:00",
+  "query_sha256": "3724f8c18b215b1c7c50875f2fb8cb8b2e47916431205b099b48e9fcd83cf1a7",
+  "catalog_sha256": "cd84a0a1922b41be63a72960947d2a47cb56a9dbec822d894ebc9a0796bf31ce",
+  "config_sha256": "f9aedbc7fca10cbdcd996888ddbcafc5a47ceee4d4c1f2a4cdf83d816a8705e5",
+  "requests_sha256": "72d747da0cb418503e8ca94e2bc2fa4c1dcb2b22dff12806ded1e3a95b96ff48",
+  "collector_sha256": "ef1662360d21b299d999b1a6b76a72a47dc13f6afefbb6cb09e8ca2e5538c85d",
+  "depth": 10,
+  "seed": 42,
+  "modes": [
+    "text",
+    "vector",
+    "hybrid",
+    "hybrid_rrf"
+  ],
+  "retrieval": {
+    "vector": {
+      "mode": "vector",
+      "algorithm": "hnsw_cosine",
+      "totalRelation": "collapsed_ann_groups_approximate",
+      "candidateWindow": 100,
+      "rrfRankConstant": 0,
+      "keywordWeight": 0.0,
+      "vectorWeight": 1.0,
+      "collapseField": "productFamily"
+    },
+    "hybrid_rrf": {
+      "mode": "hybrid_rrf",
+      "algorithm": "rrf_union_hnsw_vector",
+      "totalRelation": "collapsed_candidate_union",
+      "candidateWindow": 100,
+      "rrfRankConstant": 60,
+      "keywordWeight": 0.0,
+      "vectorWeight": 0.0,
+      "collapseField": "productFamily"
+    },
+    "text": {
+      "mode": "text",
+      "algorithm": "lexical_with_rules",
+      "totalRelation": "collapsed_groups_approximate",
+      "candidateWindow": 0,
+      "rrfRankConstant": 0,
+      "keywordWeight": 1.0,
+      "vectorWeight": 0.0,
+      "collapseField": "productFamily"
+    },
+    "hybrid": {
+      "mode": "hybrid",
+      "algorithm": "lexically_gated_weighted_cosine",
+      "totalRelation": "collapsed_groups_approximate",
+      "candidateWindow": 0,
+      "rrfRankConstant": 0,
+      "keywordWeight": 1.0,
+      "vectorWeight": 1.5,
+      "collapseField": "productFamily"
+    }
+  },
+  "attempted": 112,
+  "errors": 0,
+  "index_and_model_identity": "operator_declared_not_verified_by_collector",
+  "cache_regime": "redis started empty for this run; each query issued once per mode",
+  "corpus_provenance": "generated seed catalog of 600 products, not a real assortment",
+  "operator_config": {
+    "index_identity": "disposable elasticsearch:8.15.2, single node, index rebuilt for this run",
+    "embedding_model": "BAAI/bge-small-en-v1.5 (384-dim, normalized, served by backend/embedding-service)",
+    "embedding_revision": "model.safetensors sha256 3c9f31665447c8911517620762200d2245a2518d6e7208acc78cd9db317e21ad",
+    "cache_regime": "redis started empty for this run; each query issued once per mode",
+    "retrieval_regime": "result collapsing on productFamily: true",
+    "corpus_provenance": "generated seed catalog of 600 products, not a real assortment"
+  },
+  "latency_scope": "single-pass serial HTTP observations; randomized mode order; not a throughput benchmark",
+  "query_provenance": {
+    "author_type": "ai",
+    "author": "Codex",
+    "source": "Manually authored task descriptions, not sampled from catalog names/descriptions or existing generated queries. Author saw the system taxonomy and search code.",
+    "catalog_independent": true,
+    "judgment_status": "unjudged",
+    "limitations": [
+      "Not shopper logs or human-authored queries.",
+      "Small exploratory challenge set; not representative traffic.",
+      "Test split is frozen for local ablations, not proof against broader model training contamination."
+    ]
+  }
+}

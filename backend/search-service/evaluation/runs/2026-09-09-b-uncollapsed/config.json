@@ -1,0 +1,8 @@
+{
+  "index_identity": "disposable elasticsearch:8.15.2, single node, index rebuilt for this run",
+  "embedding_model": "BAAI/bge-small-en-v1.5 (384-dim, normalized, served by backend/embedding-service)",
+  "embedding_revision": "model.safetensors sha256 3c9f31665447c8911517620762200d2245a2518d6e7208acc78cd9db317e21ad",
+  "cache_regime": "redis started empty for this run; each query issued once per mode",
+  "retrieval_regime": "result collapsing on productFamily: false",
+  "corpus_provenance": "generated seed catalog of 600 products, not a real assortment"
+}

@@ -23,13 +23,29 @@ import graded_eval  # noqa: E402
 MODE_INDEX = {mode: index for index, mode in enumerate(graded_eval.MODES)}
 RETRIEVAL = {
     'text': {'mode': 'text', 'algorithm': 'lexical_with_rules', 'totalRelation': 'exact',
-             'candidateWindow': 0, 'rrfRankConstant': 0, 'keywordWeight': 1.0, 'vectorWeight': 0.0},
+             'candidateWindow': 0, 'rrfRankConstant': 0, 'keywordWeight': 1.0, 'vectorWeight': 0.0,
+             'collapseField': None},
     'vector': {'mode': 'vector', 'algorithm': 'hnsw_cosine', 'totalRelation': 'ann_candidates',
-               'candidateWindow': 0, 'rrfRankConstant': 0, 'keywordWeight': 0.0, 'vectorWeight': 1.0},
+               'candidateWindow': 0, 'rrfRankConstant': 0, 'keywordWeight': 0.0, 'vectorWeight': 1.0,
+               'collapseField': None},
     'hybrid': {'mode': 'hybrid', 'algorithm': 'lexically_gated_weighted_cosine', 'totalRelation': 'exact',
-               'candidateWindow': 0, 'rrfRankConstant': 0, 'keywordWeight': 1.0, 'vectorWeight': 1.5},
+               'candidateWindow': 0, 'rrfRankConstant': 0, 'keywordWeight': 1.0, 'vectorWeight': 1.5,
+               'collapseField': None},
     'hybrid_rrf': {'mode': 'hybrid_rrf', 'algorithm': 'rrf_union_hnsw_vector', 'totalRelation': 'candidate_union',
-                   'candidateWindow': 100, 'rrfRankConstant': 60, 'keywordWeight': 1.0, 'vectorWeight': 1.5},
+                   'candidateWindow': 100, 'rrfRankConstant': 60, 'keywordWeight': 1.0, 'vectorWeight': 1.5,
+                   'collapseField': None},
+}
+
+# The same server with result collapsing switched on. One result is then a product family
+# rather than a document, and the total counts families, so the harness has to accept it as a
+# different -- and separately pinned -- configuration rather than as drift.
+COLLAPSED_TOTAL_RELATION = {'text': 'collapsed_groups_approximate',
+                            'vector': 'collapsed_ann_groups_approximate',
+                            'hybrid': 'collapsed_groups_approximate',
+                            'hybrid_rrf': 'collapsed_candidate_union'}
+COLLAPSED_RETRIEVAL = {
+    mode: {**info, 'totalRelation': COLLAPSED_TOTAL_RELATION[mode], 'collapseField': 'productFamily'}
+    for mode, info in RETRIEVAL.items()
 }
 
 
@@ -104,13 +120,34 @@ class Stub:
             'inflate_total': False,     # report a total that does not match returned items
             'shift_config': False,      # change retrieval config partway through a run
             'stale_price': False,       # return prices that disagree with the snapshot
+            'extra_product_field': None,  # str -> a field the catalog did not previously publish
+            'reprice': None,            # (product_id, price) -> a genuine product data change
         }
+
+    def rows(self):
+        """The catalog this server currently holds.
+
+        A later snapshot of the same catalog: a field the API did not used to publish, and a
+        product whose own details actually changed. Carrying judgments across the two has to
+        treat those differently. Search reads the same rows, so a repriced product stays
+        internally consistent and the run is not refused for a stale-price mismatch instead.
+        """
+        rows = [dict(row) for row in self.catalog]
+        if self.behavior['extra_product_field']:
+            for row in rows:
+                row[self.behavior['extra_product_field']] = 'group-' + str(row['id'])
+        if self.behavior['reprice']:
+            product_id, price = self.behavior['reprice']
+            for row in rows:
+                if row['id'] == product_id:
+                    row['price'] = price
+        return rows
 
     def products(self, params):
         page, size = int(params.get('page', 0)), int(params.get('size', 200))
         if page == 0:
             self.catalog_reads += 1
-        rows = [dict(row) for row in self.catalog]
+        rows = self.rows()
         if self.behavior['mutate_catalog'] and self.catalog_reads > 1:
             rows[0]['price'] = rows[0]['price'] + 1
         window = rows[page * size:(page + 1) * size]
@@ -132,7 +169,7 @@ class Stub:
                 filters[key] = value == 'true'
             elif key in graded_eval.FILTERS:
                 filters[key] = value
-        matched = [row for row in self.catalog if not graded_eval.violates_filters(row, filters)]
+        matched = [row for row in self.rows() if not graded_eval.violates_filters(row, filters)]
         rotation = (len(params['q']) + MODE_INDEX[mode]) % max(1, len(matched))
         ranked = matched[rotation:] + matched[:rotation]
         drift = 1 if self.behavior['stale_price'] else 0

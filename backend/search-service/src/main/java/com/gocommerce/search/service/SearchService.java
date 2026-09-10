@@ -19,13 +19,17 @@ import co.elastic.clients.elasticsearch._types.SortOptions;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.Operator;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregation;
+import co.elastic.clients.elasticsearch.core.search.FieldCollapse;
 import co.elastic.clients.json.JsonData;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.elasticsearch.client.elc.ElasticsearchAggregations;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
+import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
@@ -40,11 +44,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class SearchService {
 
     private static final Logger log = LoggerFactory.getLogger(SearchService.class);
+    /** Names the cardinality aggregation that counts families behind a collapsed page. */
+    private static final String GROUP_COUNT_AGGREGATION = "collapsed_group_count";
+    /**
+     * Fallback family derivation for documents whose catalog does not publish one: the seed
+     * generator names variants "&lt;base slug&gt;-&lt;descriptor&gt;-&lt;n&gt;". This is a
+     * heuristic and mis-groups genuine model names of the same shape, so it is used only
+     * when the catalog says nothing.
+     */
+    private static final Pattern VARIANT_SLUG_SUFFIX = Pattern.compile("^(.*)-[a-z]{3,}-\\d{1,3}$");
     private static final Set<String> KNOWN_BRANDS = Set.of(
             "acer", "allen solly", "amazon", "amazon basics", "amazon essentials", "amazfit", "and",
             "apple", "arrow", "asus", "aurelia", "bajaj", "bewakoof", "boat", "boldfit", "borosil",
@@ -254,6 +269,7 @@ public class SearchService {
                 .withQuery(buildSearchQuery(normalizedRequest))
                 .withPageable(PageRequest.of(page, size))
                 .withTrackTotalHits(true);
+        applyCollapse(queryBuilder);
 
         List<SortOptions> sortOptions = sortOptions(normalizedRequest.sort());
         if (!sortOptions.isEmpty()) {
@@ -272,7 +288,7 @@ public class SearchService {
             searchMetrics.incrementZeroResult();
         }
 
-        long total = searchHits.getTotalHits();
+        long total = resultTotal(searchHits);
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
         SearchResponse response = new SearchResponse(items, total, page, size, totalPages, retrievalInfo(normalizedRequest));
         searchCache.put(normalizedRequest, response);
@@ -327,6 +343,20 @@ public class SearchService {
                     .query(expandedQuery)
                     .operator(Operator.Or)
                     .boost(1.5f))));
+            // Fuzziness previously applied to the name field alone, with AND semantics. A
+            // misspelled query whose words straddle the name and the description therefore
+            // matched nothing at all: "rechargable trimer" missed "Cordless Beard Trimmer"
+            // because only "trimmer" is in the name and only "rechargeable" is in the
+            // description. searchText concatenates the fields, so fuzzy matching belongs
+            // here. minimumShouldMatch keeps a single loose term from dragging in the
+            // catalog, and the low boost keeps corrections below exact matches.
+            b.should(Query.of(s -> s.match(m -> m
+                    .field("searchText")
+                    .query(query)
+                    .operator(Operator.Or)
+                    .fuzziness("AUTO")
+                    .minimumShouldMatch("2<70%")
+                    .boost(1.0f))));
             for (String brand : detectBrandIntents(query)) {
                 b.should(Query.of(s -> s.term(t -> t
                         .field("brand")
@@ -351,14 +381,15 @@ public class SearchService {
 
         validateQueryVector(queryVector);
 
+        var hybridBuilder = NativeQuery.builder()
+                .withQuery(buildHybridQuery(normalizedRequest, queryVector))
+                .withSort(sortOptions(normalizedRequest.sort()))
+                .withPageable(PageRequest.of(page, size))
+                .withTrackTotalHits(true);
+        applyCollapse(hybridBuilder);
+
         SearchHits<ProductDocument> searchHits = elasticsearchOperations.search(
-                NativeQuery.builder()
-                        .withQuery(buildHybridQuery(normalizedRequest, queryVector))
-                        .withSort(sortOptions(normalizedRequest.sort()))
-                        .withPageable(PageRequest.of(page, size))
-                        .withTrackTotalHits(true)
-                        .build(),
-                ProductDocument.class);
+                hybridBuilder.build(), ProductDocument.class);
 
         List<SearchResultItem> items = searchHits.getSearchHits().stream()
                 .map(SearchHit::getContent)
@@ -369,7 +400,7 @@ public class SearchService {
             searchMetrics.incrementZeroResult();
         }
 
-        long total = searchHits.getTotalHits();
+        long total = resultTotal(searchHits);
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
         SearchResponse response = new SearchResponse(items, total, page, size, totalPages, retrievalInfo(normalizedRequest));
         searchCache.put(normalizedRequest, response);
@@ -393,6 +424,7 @@ public class SearchService {
         } else {
             queryBuilder.withKnnQuery(buildAnnVectorQuery(normalizedRequest, queryVector, page, size));
         }
+        applyCollapse(queryBuilder);
 
         SearchHits<ProductDocument> searchHits = elasticsearchOperations.search(
                 queryBuilder.build(), ProductDocument.class);
@@ -406,7 +438,7 @@ public class SearchService {
             searchMetrics.incrementZeroResult();
         }
 
-        long total = searchHits.getTotalHits();
+        long total = resultTotal(searchHits);
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
         SearchResponse response = new SearchResponse(items, total, page, size, totalPages, retrievalInfo(normalizedRequest));
         searchCache.put(normalizedRequest, response);
@@ -767,7 +799,7 @@ public class SearchService {
                 asString(p.get("embeddingText")),
                 buildSearchText(name, description, brand, category, tags, attributes));
 
-        return new ProductDocument(
+        ProductDocument document = new ProductDocument(
                 id,
                 slug,
                 name,
@@ -789,6 +821,37 @@ public class SearchService {
                 searchText,
                 0L
         );
+        document.setProductFamily(productFamily(p, slug, id));
+        return document;
+    }
+
+    /**
+     * The family a document collapses into.
+     *
+     * The catalog publishes it, and that is the answer whenever it is there. The fallback
+     * exists for documents indexed from a catalog that predates the column: variant slugs
+     * were generated as "&lt;base slug&gt;-&lt;descriptor&gt;-&lt;n&gt;", so that suffix is
+     * stripped. It is a guess, and a wrong one for model names of the same shape --
+     * "sony-wh-1000" is a product, not variant 1000 of "sony-wh" -- which is why it never
+     * overrides what the catalog says. A wrong guess makes a product its own family, so it
+     * costs a missed grouping and never merges two different products.
+     */
+    private static String productFamily(Map<String, Object> product, String slug, String id) {
+        String published = firstNonBlank(
+                asString(product.get("productFamily")),
+                asString(product.get("family")),
+                asString(product.get("familySlug")));
+        if (published != null) {
+            return published;
+        }
+        if (slug != null) {
+            Matcher matcher = VARIANT_SLUG_SUFFIX.matcher(slug);
+            if (matcher.matches() && !matcher.group(1).isBlank()) {
+                return matcher.group(1);
+            }
+            return slug;
+        }
+        return id;
     }
 
     private static String asString(Object o) {
@@ -1006,16 +1069,100 @@ public class SearchService {
     }
 
     private RetrievalInfo retrievalInfo(String mode, int page, int size) {
+        String collapse = collapseField();
         return switch (mode) {
-            case "hybrid_rrf" -> new RetrievalInfo(mode, "rrf_union_hnsw_vector", "candidate_union",
-                    searchProperties.getRrf().getCandidateWindow(), searchProperties.getRrf().getRankConstant(), 0, 0);
-            case "vector" -> new RetrievalInfo(mode, "hnsw_cosine", "ann_candidates",
-                    annCandidates(page, size), 0, 0, 1);
-            case "vector_exact" -> new RetrievalInfo(mode, "exact_cosine", "exact", 0, 0, 0, 1);
-            case "hybrid" -> new RetrievalInfo(mode, "lexically_gated_weighted_cosine", "exact", 0, 0,
-                    searchProperties.getHybrid().getKeywordWeight(), searchProperties.getHybrid().getVectorWeight());
-            default -> new RetrievalInfo("text", "lexical_with_rules", "exact", 0, 0, 1, 0);
+            case "hybrid_rrf" -> new RetrievalInfo(mode, "rrf_union_hnsw_vector",
+                    totalRelation("candidate_union", "collapsed_candidate_union"),
+                    searchProperties.getRrf().getCandidateWindow(), searchProperties.getRrf().getRankConstant(), 0, 0,
+                    collapse);
+            case "vector" -> new RetrievalInfo(mode, "hnsw_cosine",
+                    totalRelation("ann_candidates", "collapsed_ann_groups_approximate"),
+                    annCandidates(page, size), 0, 0, 1, collapse);
+            case "vector_exact" -> new RetrievalInfo(mode, "exact_cosine",
+                    totalRelation("exact", "collapsed_groups_approximate"), 0, 0, 0, 1, collapse);
+            case "hybrid" -> new RetrievalInfo(mode, "lexically_gated_weighted_cosine",
+                    totalRelation("exact", "collapsed_groups_approximate"), 0, 0,
+                    searchProperties.getHybrid().getKeywordWeight(), searchProperties.getHybrid().getVectorWeight(),
+                    collapse);
+            default -> new RetrievalInfo("text", "lexical_with_rules",
+                    totalRelation("exact", "collapsed_groups_approximate"), 0, 0, 1, 0, collapse);
         };
+    }
+
+    private String totalRelation(String uncollapsed, String collapsed) {
+        return collapseField() == null ? uncollapsed : collapsed;
+    }
+
+    /** The field result pages collapse on, or null when collapsing is switched off. */
+    private String collapseField() {
+        SearchProperties.Collapse collapse = searchProperties.getCollapse();
+        return collapse.isEnabled() ? collapse.getField() : null;
+    }
+
+    /**
+     * Collapses a result page to one hit per product family, and asks Elasticsearch for the
+     * number of families alongside it.
+     *
+     * The count matters as much as the collapsing. Collapsed hits are drawn from the same
+     * matching set, so {@code totalHits} still counts documents: reporting it would tell a
+     * client there are 600 results and 30 pages when 113 results across 6 pages exist, and
+     * every page past the sixth would come back empty.
+     */
+    private void applyCollapse(NativeQueryBuilder builder) {
+        if (collapseHits(builder)) {
+            String field = collapseField();
+            builder.withAggregation(GROUP_COUNT_AGGREGATION, Aggregation.of(a -> a.cardinality(c -> c.field(field))));
+        }
+    }
+
+    /**
+     * Collapsing alone, for the reciprocal-rank-fusion legs: their totals come from the size
+     * of the fused union, so a family count per leg would be paid for and thrown away.
+     */
+    private boolean collapseHits(NativeQueryBuilder builder) {
+        String field = collapseField();
+        if (field == null) {
+            return false;
+        }
+        builder.withFieldCollapse(FieldCollapse.of(f -> f.field(field)));
+        return true;
+    }
+
+    /**
+     * The number of results the caller can actually page through: families when collapsing
+     * is on, documents otherwise.
+     *
+     * Cardinality is approximate above Elasticsearch's precision threshold, which is why the
+     * retrieval metadata says so rather than presenting the number as exact. A missing
+     * aggregation is a hard failure: silently falling back to the document total would
+     * restore exactly the pagination bug collapsing introduced.
+     */
+    private long resultTotal(SearchHits<ProductDocument> hits) {
+        if (collapseField() == null) {
+            return hits.getTotalHits();
+        }
+        if (hits.getAggregations() instanceof ElasticsearchAggregations aggregations) {
+            var aggregation = aggregations.get(GROUP_COUNT_AGGREGATION);
+            if (aggregation != null && aggregation.aggregation().getAggregate().isCardinality()) {
+                return aggregation.aggregation().getAggregate().cardinality().value();
+            }
+        }
+        throw new IllegalStateException(
+                "Collapsed search returned no " + GROUP_COUNT_AGGREGATION + " aggregation; the family count "
+                        + "behind this page is unknown and the document total would overstate it");
+    }
+
+    /**
+     * The identity a result occupies in a collapsed page. Documents indexed before the
+     * catalog published a family fall back to their own id, which makes them a group of one
+     * rather than silently merging them all together.
+     */
+    private String groupKey(ProductDocument document) {
+        if (collapseField() == null) {
+            return document.getId();
+        }
+        String family = document.getProductFamily();
+        return family != null && !family.isBlank() ? family : document.getId();
     }
 
     private int annCandidates(int page, int size) {
@@ -1029,11 +1176,17 @@ public class SearchService {
         int window = searchProperties.getRrf().getCandidateWindow();
         int rankConstant = searchProperties.getRrf().getRankConstant();
         // Independent retrieval with identical filters. Vector-only candidates can enter the union.
-        var lexical = elasticsearchOperations.search(NativeQuery.builder().withQuery(buildSearchQuery(request))
-                .withPageable(PageRequest.of(0, window)).withSort(sortOptions(null)).build(), ProductDocument.class);
-        var semantic = elasticsearchOperations.search(NativeQuery.builder()
+        // Both legs collapse, so the candidate window buys window distinct products rather
+        // than window colours of the same few.
+        var lexicalBuilder = NativeQuery.builder().withQuery(buildSearchQuery(request))
+                .withPageable(PageRequest.of(0, window)).withSort(sortOptions(null));
+        var semanticBuilder = NativeQuery.builder()
                 .withKnnQuery(buildAnnVectorQuery(request, vector, 0, window))
-                .withPageable(PageRequest.of(0, window)).withSort(sortOptions(null)).build(), ProductDocument.class);
+                .withPageable(PageRequest.of(0, window)).withSort(sortOptions(null));
+        collapseHits(lexicalBuilder);
+        collapseHits(semanticBuilder);
+        var lexical = elasticsearchOperations.search(lexicalBuilder.build(), ProductDocument.class);
+        var semantic = elasticsearchOperations.search(semanticBuilder.build(), ProductDocument.class);
         var documents = new java.util.HashMap<String, ProductDocument>();
         var scores = new java.util.HashMap<String, Double>();
         for (var hits : List.of(lexical, semantic)) {
@@ -1042,9 +1195,14 @@ public class SearchService {
             for (var hit : hits.getSearchHits()) {
                 rank++;
                 ProductDocument doc = hit.getContent();
-                if (seen.add(doc.getId())) {
-                    documents.putIfAbsent(doc.getId(), doc);
-                    scores.merge(doc.getId(), 1.0 / (rankConstant + rank), Double::sum);
+                // Fused on the group, not the document id. The two legs collapse
+                // independently and can pick different variants as the representative of
+                // one family; keying on the id would put both in the union and undo the
+                // collapsing at exactly the point the union is built.
+                String key = groupKey(doc);
+                if (seen.add(key)) {
+                    documents.putIfAbsent(key, doc);
+                    scores.merge(key, 1.0 / (rankConstant + rank), Double::sum);
                 }
             }
         }

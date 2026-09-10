@@ -424,3 +424,107 @@ class AgreementTest(EndToEndCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CarryForwardTest(EndToEndCase):
+    """Moving existing judgments onto a later run without inventing any.
+
+    Regrading identical pairs after every code change is how judgment sets rot, but
+    rebadging old grades with new hashes is how a benchmark starts reporting labels nobody
+    made. These tests are about the line between the two.
+    """
+
+    def carry(self, source, judgments, target, *extra):
+        out = self.tmp / f'carried-{target.name}.jsonl'
+        code = graded_eval.main(['carry-forward', '--from-run', str(source), '--judgments', str(judgments),
+                                 '--run', str(target), '--out', str(out), *extra])
+        return code, out
+
+    def second_run(self, name='run2', **behavior):
+        stub = Stub()
+        stub.behavior.update(behavior)
+        return self.collected_run(stub, name=name)
+
+    def test_grades_move_when_nothing_a_reviewer_saw_changed(self):
+        source, _, judgments, manifest = self.judged_run()
+        target = self.second_run()
+        target_manifest = graded_eval.read_json(target / 'manifest.json')
+
+        source_pool_id = graded_eval.read_jsonl(judgments)[0]['pool_id']
+        code, out = self.carry(source, judgments, target)
+        self.assertEqual(code, 0)
+        carried = graded_eval.read_jsonl(out)
+        self.assertTrue(carried)
+        original = {(row['query_id'], row['product_id']): row for row in graded_eval.read_jsonl(judgments)}
+        for row in carried:
+            before = original[(row['query_id'], row['product_id'])]
+            self.assertEqual(row['grade'], before['grade'])
+            self.assertEqual(row['assessor_id'], before['assessor_id'])
+            self.assertEqual(row['rationale'], before['rationale'])
+            # Re-stamped for the new run, but the chain back to where the grade was made
+            # stays in the row.
+            self.assertEqual(row['catalog_sha256'], target_manifest['catalog_sha256'])
+            self.assertEqual(row['carried_from_catalog_sha256'], manifest['catalog_sha256'])
+            self.assertEqual(row['carried_from_pool_id'], source_pool_id)
+
+    def test_carried_judgments_are_accepted_by_evaluate(self):
+        source, _, judgments, _ = self.judged_run()
+        target = self.second_run()
+        code, out = self.carry(source, judgments, target)
+        self.assertEqual(code, 0)
+        report = self.tmp / 'carried-report.json'
+        self.assertEqual(graded_eval.main(['evaluate', '--run', str(target), '--judgments', str(out),
+                                           '--assessor', 'fixture-assessor-a', '--out', str(report),
+                                           '--split', 'test', '--k', str(self.k)]), 0)
+
+    def test_a_product_whose_details_changed_is_not_carried(self):
+        source, _, judgments, _ = self.judged_run()
+        target = self.second_run(reprice=('p1', 41))
+
+        code, out = self.carry(source, judgments, target)
+        self.assertEqual(code, 0)
+        carried = graded_eval.read_jsonl(out)
+        self.assertTrue(carried, 'unchanged products should still carry')
+        self.assertNotIn('p1', {row['product_id'] for row in carried})
+
+    def test_a_new_visible_field_must_be_declared_before_grades_can_move(self):
+        source, _, judgments, _ = self.judged_run()
+        target = self.second_run(extra_product_field='warranty')
+
+        code, out = self.carry(source, judgments, target)
+        self.assertEqual(code, 2, 'an undeclared new field must stop the carry, not be ignored')
+        self.assertFalse(out.exists())
+
+        code, out = self.carry(source, judgments, target, '--allow-new-field', 'warranty')
+        self.assertEqual(code, 0)
+        carried = graded_eval.read_jsonl(out)
+        self.assertTrue(carried)
+        self.assertEqual(carried[0]['carried_new_fields_ignored'], ['warranty'])
+
+    def test_a_field_reviewers_never_see_does_not_need_declaring(self):
+        # Retrieval-derived fields are stripped before a reviewer sees a product, so their
+        # appearance cannot have changed a grade.
+        source, _, judgments, _ = self.judged_run()
+        target = self.second_run(extra_product_field=sorted(graded_eval.DERIVED)[0])
+        self.assertEqual(self.carry(source, judgments, target)[0], 0)
+
+    def test_judgments_from_another_pool_are_refused(self):
+        source, _, judgments, _ = self.judged_run()
+        target = self.second_run()
+        rows = graded_eval.read_jsonl(judgments)
+        for row in rows:
+            row['pool_id'] = 'a' * 64
+        foreign = self.tmp / 'foreign.jsonl'
+        graded_eval.write_jsonl(foreign, rows)
+
+        self.assertEqual(self.carry(source, foreign, target)[0], 2)
+
+    def test_a_run_with_different_queries_refuses_the_carry(self):
+        source, _, judgments, _ = self.judged_run()
+        # Rewriting the query text changes the question the grade answered.
+        queries = json.loads(self.queries.read_text())
+        queries['queries'][0]['query'] = queries['queries'][0]['query'] + ' urgently'
+        self.queries.write_text(json.dumps(queries))
+        target = self.second_run(name='run-requeried')
+
+        self.assertEqual(self.carry(source, judgments, target)[0], 2)

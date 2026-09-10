@@ -27,6 +27,13 @@ public class CatalogSeeder {
             target.setStockQuantity(source.getStockQuantity());
             target.setActive(source.isActive());
             target.setAttributes(source.getAttributes());
+            // Every property of the generated product has to be copied here. A field added to
+            // Product and forgotten in this list does not fail: the row is written with a
+            // default and the omission only shows up as a feature that quietly does nothing.
+            // That is what happened to productFamily, which left search collapsing every
+            // product into a family of one. CatalogSeederFidelityTest now fails on a
+            // dropped field instead.
+            target.setProductFamily(source.getProductFamily());
             products.save(target);
             saved++;
         }

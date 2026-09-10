@@ -12,6 +12,9 @@ public class SearchProperties {
     private final Ann ann = new Ann();
     public Ann getAnn() { return ann; }
 
+    private final Collapse collapse = new Collapse();
+    public Collapse getCollapse() { return collapse; }
+
     private final Indexing indexing = new Indexing();
 
     public Hybrid getHybrid() {
@@ -70,6 +73,38 @@ public class SearchProperties {
                 throw new IllegalArgumentException("ANN num-candidates must be 1–10000");
             }
             this.numCandidates = numCandidates;
+        }
+    }
+
+    /**
+     * Result-page collapsing. The catalog carries six near-identical variants of most
+     * products, and without collapsing they fill a page: recall stays high while precision
+     * falls, because every slot after the first is a colour of the item already shown.
+     *
+     * Switchable because it changes what a page means -- the before/after has to be
+     * measurable by the evaluation harness rather than asserted.
+     */
+    public static class Collapse {
+        private boolean enabled = true;
+        private String field = "productFamily";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getField() {
+            return field;
+        }
+
+        public void setField(String field) {
+            if (field == null || field.isBlank()) {
+                throw new IllegalArgumentException("Collapse field must not be blank");
+            }
+            this.field = field;
         }
     }
 

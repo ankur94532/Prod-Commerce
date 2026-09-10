@@ -12,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
+import com.gocommerce.search.support.StubSearchHits;
 import org.springframework.data.elasticsearch.core.SearchHitsImpl;
 import org.springframework.data.elasticsearch.core.TotalHitsRelation;
 import org.springframework.test.web.servlet.MockMvc;
@@ -101,7 +102,7 @@ class SearchControllerTest {
                                 null,
                                 null,
                                 List.of(hit),
-                                null,
+                                StubSearchHits.groupCount(1),
                                 null,
                                 null));
 
@@ -155,7 +156,7 @@ class SearchControllerTest {
                                 null,
                                 null,
                                 List.of(hit),
-                                null,
+                                StubSearchHits.groupCount(1),
                                 null,
                                 null));
 

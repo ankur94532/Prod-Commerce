@@ -25,7 +25,11 @@ RUBRIC = 'shopper-graded-v1'
 # Fields that describe how a product was retrieved or ranked, never what it is.
 # They must never reach a reviewer, or judgments become a vote on the ranker.
 DERIVED = {'score', '_score', 'relevanceScore', 'rank', 'position', 'embedding', 'searchEmbedding',
-           'vector', 'highlight', 'highlights', 'sortValues', 'explanation'}
+           'vector', 'highlight', 'highlights', 'sortValues', 'explanation',
+           # The collapse key. It groups variants for the ranker and says nothing about what
+           # the product is; a reviewer who saw it could read the ranker's grouping off the
+           # page and grade the grouping instead of the product.
+           'productFamily'}
 
 
 def require(condition, message):
@@ -131,6 +135,10 @@ def violates_filters(product, filters):
     return False
 
 
+# Elasticsearch's cardinality aggregation is exact up to its default precision threshold.
+CARDINALITY_EXACT_BELOW = 3000
+
+
 def validate_response(response, mode, depth):
     require(isinstance(response, dict) and isinstance(response.get('items'), list), 'Invalid search response')
     info = response.get('retrieval')
@@ -142,10 +150,20 @@ def validate_response(response, mode, depth):
     algorithms = {'text': 'lexical_with_rules', 'vector': 'hnsw_cosine',
                   'hybrid': 'lexically_gated_weighted_cosine', 'hybrid_rrf': 'rrf_union_hnsw_vector'}
     require(info.get('algorithm') == algorithms[mode], 'Unexpected algorithm')
+    # Result collapsing changes what one result is: a product family rather than a document.
+    # Both settings are legitimate and both are scorable, but a collapsed run and an
+    # uncollapsed one are not the same experiment, so the server has to say which it ran and
+    # the manifest pins it for the whole run.
+    collapse = info.get('collapseField')
+    require(collapse is None or (isinstance(collapse, str) and collapse), 'Invalid collapse field')
+    collapsed = collapse is not None
     # ANN totals are approximate by construction; only the lexical paths report exact counts.
     relations = {'text': 'exact', 'hybrid': 'exact',
                  'vector': 'ann_candidates', 'hybrid_rrf': 'candidate_union'}
-    require(info.get('totalRelation') == relations[mode], 'Unknown total relation')
+    collapsed_relations = {'text': 'collapsed_groups_approximate', 'hybrid': 'collapsed_groups_approximate',
+                           'vector': 'collapsed_ann_groups_approximate', 'hybrid_rrf': 'collapsed_candidate_union'}
+    expected = (collapsed_relations if collapsed else relations)[mode]
+    require(info.get('totalRelation') == expected, 'Unknown total relation')
     if mode == 'hybrid_rrf':
         require(type(info.get('candidateWindow')) is int and info['candidateWindow'] >= depth, 'RRF candidate window smaller than collection depth')
         require(type(info.get('rrfRankConstant')) is int and info['rrfRankConstant'] > 0, 'Invalid RRF constant')
@@ -153,7 +171,14 @@ def validate_response(response, mode, depth):
     ids = [str(item['id']) for item in response['items']]
     require(len(ids) == len(set(ids)) and len(ids) <= depth, 'Duplicate results or excess depth')
     require(type(response.get('total')) is int and response['total'] >= len(ids), 'Invalid total')
-    require(len(ids) == min(response['total'], depth), 'Truncated response')
+    # A page shorter than the depth is only acceptable when the server genuinely has nothing
+    # more to give. Collapsed totals come from a cardinality aggregation, which Elasticsearch
+    # computes exactly below its default precision threshold and estimates above it, so the
+    # exact comparison is kept where it is sound and dropped where it would be a false alarm.
+    if collapsed and response['total'] > CARDINALITY_EXACT_BELOW:
+        require(len(ids) <= depth, 'Truncated response')
+    else:
+        require(len(ids) == min(response['total'], depth), 'Truncated response')
     return ids
 
 
@@ -362,18 +387,46 @@ def dcg(grades):
     return sum((2 ** grade - 1) / math.log2(rank + 2) for rank, grade in enumerate(grades))
 
 
-def metrics(ids, judgments, k):
+def metrics(ids, judgments, k, families=None):
     require(len(ids) == len(set(ids)), 'Duplicate result IDs')
     require(all(pid in judgments for pid in ids[:k]), 'Unjudged result; expand pool')
     grades = [judgments[pid] for pid in ids[:k]]
     ideal = dcg(sorted(judgments.values(), reverse=True)[:k])
     hits = sum(grade >= 2 for grade in grades)
     relevant = sum(grade >= 2 for grade in judgments.values())
-    return {
+    scores = {
         f'pooled_ndcg@{k}': dcg(grades) / ideal if ideal else None,
         f'precision@{k}': hits / k,
         f'pooled_recall@{k}': hits / relevant if relevant else None,
         f'mrr@{k}': next((1 / rank for rank, grade in enumerate(grades, 1) if grade >= 2), 0.0),
+    }
+    if families is not None:
+        scores.update(redundancy(ids, judgments, k, families))
+    return scores
+
+
+def redundancy(ids, judgments, k, families):
+    """How many genuinely different products a page shows, alongside how relevant it is.
+
+    None of the metrics above can see variant redundancy, and it is worth being precise
+    about why rather than assuming they can. Each of six colours of one backpack is
+    independently relevant, so a page of six of them scores as six correct results; and the
+    pooled ideal ranking is drawn from the same page, so removing five of them shortens the
+    ideal by the same amount and NDCG does not move either. A page that wastes five of its
+    ten slots and a page that does not can therefore have identical NDCG, precision, recall
+    and MRR.
+
+    These two counts are what a page of results is actually worth to a shopper looking for
+    something to buy. They need no judgments to compute -- only the catalog's own grouping --
+    which is also why they cannot be tuned by regrading.
+    """
+    shown = ids[:k]
+    distinct = {families[pid] for pid in shown}
+    relevant_families = {families[pid] for pid in shown if judgments[pid] >= 2}
+    return {
+        f'distinct_families@{k}': len(distinct),
+        f'redundant_results@{k}': len(shown) - len(distinct),
+        f'distinct_relevant_families@{k}': len(relevant_families),
     }
 
 
@@ -419,6 +472,11 @@ def evaluate(args):
         if qid in selected:
             require((args.assessor, qid, pid) in labels, f'Incomplete judgment pool for {qid}/{pid}')
             require(not violates_filters(catalog[pid], selected[qid].get('filters', {})) or labels[args.assessor, qid, pid] == 0, 'Hard constraint violation must be grade 0')
+    # The catalog's own variant grouping, which is what the redundancy counts are measured
+    # against. A snapshot taken before the catalog published it leaves those counts out of
+    # the report rather than guessing the grouping from names or slugs.
+    families = ({pid: product['productFamily'] for pid, product in catalog.items()}
+                if all('productFamily' in product for product in catalog.values()) else None)
     per_query = []
     for row in rows:
         qid = row['query_id']
@@ -427,11 +485,14 @@ def evaluate(args):
         judgment = {pid: grade for (who, query_id, pid), grade in labels.items() if who == args.assessor and query_id == qid}
         ids = [str(item['id']) for item in row['response']['items']]
         per_query.append({'query_id': qid, 'family_id': selected[qid]['family_id'], 'kind': selected[qid]['kind'], 'mode': row['mode'],
-                          **metrics(ids, judgment, args.k), 'elapsed_ms': row['elapsed_ms'], 'returned': len(ids)})
+                          **metrics(ids, judgment, args.k, families), 'elapsed_ms': row['elapsed_ms'], 'returned': len(ids)})
     ndcg_key = f'pooled_ndcg@{args.k}'
+    keys = [ndcg_key, f'precision@{args.k}', f'pooled_recall@{args.k}', f'mrr@{args.k}']
+    if families is not None:
+        keys += [f'distinct_families@{args.k}', f'redundant_results@{args.k}', f'distinct_relevant_families@{args.k}']
     def summarize(group):
         return {'queries': len(group), 'ndcg_scorable_queries': sum(r[ndcg_key] is not None for r in group),
-                **{key: mean_present([r[key] for r in group]) for key in (ndcg_key, f'precision@{args.k}', f'pooled_recall@{args.k}', f'mrr@{args.k}')},
+                **{key: mean_present([r[key] for r in group]) for key in keys},
                 'zero_result_queries': sum(r['returned'] == 0 for r in group), 'mean_observed_latency_ms': mean_present([r['elapsed_ms'] for r in group])}
     by_mode = {mode: summarize([r for r in per_query if r['mode'] == mode]) for mode in MODES}
     by_kind = {kind: {mode: summarize([r for r in per_query if r['kind'] == kind and r['mode'] == mode]) for mode in MODES} for kind in sorted({r['kind'] for r in per_query})}
@@ -451,7 +512,9 @@ def evaluate(args):
               'definitions': {'gain': '2^grade - 1', 'binary_relevant': 'grade >= 2', 'precision_denominator': args.k,
                               'ndcg_ideal': 'all judged products in the pooled candidate set, not the full catalog',
                               'no_positive_gain': 'NDCG is null and excluded with scorable count reported',
-                              'recall': 'pool-bounded; not catalog recall', 'uncertainty': 'paired query-family bootstrap, 2000 resamples; small sets remain exploratory'},
+                              'recall': 'pool-bounded; not catalog recall',
+                              'distinct_families': 'product families in the top k, from the catalog grouping, not judgments',
+                              'redundant_results': 'results occupying a family already shown above them; NDCG cannot see these', 'uncertainty': 'paired query-family bootstrap, 2000 resamples; small sets remain exploratory'},
               'by_mode': by_mode, 'by_kind': by_kind, 'paired_ndcg_differences': paired, 'per_query': per_query}
     write_json(args.out, report)
     print(f'Wrote {report["evidence_class"]}: {args.out}')
@@ -474,6 +537,79 @@ def agreement(args):
               'linear_weighted_cohen_kappa': 1 - observed / expected if expected else None,
               'note': 'Agreement measures consistency, not truth; degenerate kappa is null.'}
     write_json(args.out, result)
+    return 0
+
+
+def carry_forward(args):
+    """Moves existing judgments onto a new run when the graded evidence did not change.
+
+    Regrading identical query/product pairs after every code change is the fastest way to
+    end up with a judgment set nobody actually made, so this exists -- but it is the exact
+    place where a benchmark quietly becomes dishonest, and every check below is there to
+    stop that:
+
+      - The queries must be byte-identical. A grade answers a question; change the question
+        and the answer is not the same answer.
+      - The pair must be in the new pool. Grades cannot be invented for results the new run
+        never returned.
+      - The product content a reviewer actually saw must be byte-identical. Everything the
+        pool hides from reviewers (see DERIVED) is excluded from that comparison, because a
+        reviewer could not have been influenced by what they were not shown.
+      - A field that appears in the new snapshot and did not exist in the old one has to be
+        named on the command line. It might be irrelevant, or it might be the one fact that
+        changes the grade; that judgment is the operator's to make and to record.
+
+    Carried rows keep the assessor and rationale of the original judgment and record where
+    they came from, so a report built on them can always be traced back.
+    """
+    pool_id, pairs, manifest, _, catalog, _ = pool_data(args.run)
+    # The source run is revalidated rather than trusted: its pool identity is recomputed from
+    # its own frozen files, so a judgment file that never belonged to it is refused here
+    # instead of being silently rebadged with the new run's hashes.
+    source_pool_id, _, source_manifest, _, source_catalog, _ = pool_data(args.from_run)
+    require(source_manifest['query_sha256'] == manifest['query_sha256'],
+            'Queries differ between the runs; judgments answer a different question and cannot be carried')
+
+    allowed_new_fields = set(args.allow_new_field or [])
+    reviewed = lambda product: {k: v for k, v in product.items() if k not in DERIVED}
+    known = set(pairs)
+
+    carried, skipped = [], collections.Counter()
+    unexplained_fields = set()
+    for row in read_jsonl(args.judgments):
+        require(row.get('pool_id') == source_pool_id, 'Judgment does not belong to the source run')
+        require(row.get('rubric_version') == RUBRIC, 'Judgment was made against a different rubric')
+        require(all(row.get(key) == source_manifest[key] for key in ('query_sha256', 'catalog_sha256')),
+                'Judgment snapshot does not match the source run')
+        pair = (row['query_id'], str(row['product_id']))
+        if pair not in known:
+            skipped['not_in_new_pool'] += 1
+            continue
+        before = reviewed(source_catalog[pair[1]])
+        after = reviewed(catalog[pair[1]])
+        added = set(after) - set(before)
+        if added - allowed_new_fields:
+            unexplained_fields |= added - allowed_new_fields
+            skipped['new_field_not_declared'] += 1
+            continue
+        if {k: v for k, v in after.items() if k not in added} != before:
+            skipped['product_changed'] += 1
+            continue
+        carried.append({**row, 'pool_id': pool_id,
+                        'query_sha256': manifest['query_sha256'],
+                        'catalog_sha256': manifest['catalog_sha256'],
+                        'carried_from_pool_id': row['pool_id'],
+                        'carried_from_catalog_sha256': row['catalog_sha256'],
+                        'carried_new_fields_ignored': sorted(added)})
+
+    require(not unexplained_fields,
+            'New product fields in this snapshot must be declared with --allow-new-field before '
+            'judgments can be carried: ' + ', '.join(sorted(unexplained_fields)))
+
+    write_jsonl(pathlib.Path(args.out), carried)
+    judged = {(row['query_id'], str(row['product_id'])) for row in carried}
+    print(json.dumps({'carried': len(carried), 'skipped': dict(skipped),
+                      'pairs_in_new_pool': len(known), 'still_unjudged': len(known - judged)}))
     return 0
 
 
@@ -502,6 +638,13 @@ def main(argv=None):
     command.add_argument('--out', required=True)
     command.add_argument('--seed', type=int, default=42)
     command.set_defaults(func=export_pool)
+    command = sub.add_parser('carry-forward')
+    for key in ('from-run', 'judgments', 'run', 'out'):
+        command.add_argument('--' + key, required=True)
+    command.add_argument('--allow-new-field', action='append', default=[],
+                         help='A product field present in the new snapshot but not the old one, which the '
+                              'operator has decided cannot change a grade. Repeatable.')
+    command.set_defaults(func=carry_forward)
     command = sub.add_parser('evaluate')
     for key in ('run', 'judgments', 'assessor', 'out'):
         command.add_argument('--' + key, required=True)

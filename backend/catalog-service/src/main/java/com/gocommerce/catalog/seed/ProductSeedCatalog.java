@@ -172,7 +172,7 @@ public final class ProductSeedCatalog {
         BigDecimal price = baseProduct.getPrice().add(priceDelta(baseProduct, variantNumber));
         int stock = Math.max(5, baseProduct.getStockQuantity() + ((variantNumber % 7) * 9) - 18);
 
-        return new Product(
+        Product product = new Product(
                 slug,
                 name,
                 descriptor + " variant. " + baseProduct.getDescription(),
@@ -184,6 +184,10 @@ public final class ProductSeedCatalog {
                 stock,
                 true,
                 attributes);
+        // The generator knows what this is a variant of, so it says so rather than leaving
+        // the search indexer to infer it back out of the slug.
+        product.setProductFamily(baseProduct.getSlug());
+        return product;
     }
 
     private static Map<String, String> variantAttributes(Product baseProduct, String descriptor, int variantNumber) {
@@ -304,7 +308,7 @@ public final class ProductSeedCatalog {
                              String brand,
                              int stock,
                              Map<String, String> attributes) {
-        return new Product(
+        Product product = new Product(
                 slug,
                 name,
                 description,
@@ -316,6 +320,11 @@ public final class ProductSeedCatalog {
                 stock,
                 true,
                 attributes);
+        // A standalone product is a family of one, stated rather than left null for a
+        // persistence default to fill in: the generated catalog is also read in memory, by
+        // the search indexer and by tests, where no database default applies.
+        product.setProductFamily(slug);
+        return product;
     }
 
     private static String imageUrl(String category, String name) {

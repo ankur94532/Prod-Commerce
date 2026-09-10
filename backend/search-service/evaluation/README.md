@@ -44,6 +44,14 @@ python3 evaluation/graded_eval.py evaluate \
   --run runs/2026-09-09 --judgments runs/2026-09-09/judgments.jsonl \
   --assessor <assessor-id> --split test --k 10 --out runs/2026-09-09/report.test.json
 
+# Optional: move existing grades onto a later run instead of regrading identical pairs.
+# It refuses unless the queries are byte-identical and the product content a reviewer saw is
+# unchanged, records the pool each grade came from, and makes you name any newly published
+# product field it should treat as irrelevant to a grade.
+python3 evaluation/graded_eval.py carry-forward \
+  --from-run runs/2026-09-09 --judgments runs/2026-09-09/judgments.jsonl \
+  --run runs/2026-09-10 --out runs/2026-09-10/judgments.jsonl
+
 # Optional, with two assessors over the same pool:
 python3 evaluation/graded_eval.py agreement \
   --run runs/2026-09-09 --judgments runs/2026-09-09/judgments.jsonl \
@@ -84,6 +92,16 @@ one assessor without adjudication, or the pool is incomplete for the split being
   query-family bootstrap (2000 resamples). Report `mean_delta` with `ci95`, or not at all.
 - `definitions` restates the gain function, the relevance threshold, the fixed precision
   denominator, and the pool-bounded meaning of recall.
+- `distinct_families@k`, `redundant_results@k` and `distinct_relevant_families@k` count how
+  many genuinely different products a page shows. They come from the catalog's own variant
+  grouping and use no judgments, so they cannot be moved by regrading. They exist because
+  the judged metrics are blind to redundancy: six colours of the right product are six
+  independently relevant results, and the pooled NDCG ideal is drawn from the same page, so
+  a page that wastes five of ten slots and one that does not can score identically on NDCG,
+  precision, recall and MRR.
+- Two runs that return different results have different pools. Metrics whose denominator is
+  the pool — recall above all, and NDCG through its ideal — are not strictly comparable
+  between them. The redundancy counts are.
 
 ## Tests
 

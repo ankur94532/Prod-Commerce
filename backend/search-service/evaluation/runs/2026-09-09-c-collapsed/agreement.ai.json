@@ -1,0 +1,13 @@
+{
+  "assessors": {
+    "claude-opus-5": "ai",
+    "openai-codex-gpt-5-strict-evidence-v1": "ai"
+  },
+  "pool_id": "5c6226e0f53a13355e18c236fdb912d5cc672037133140060bb39717c46037c3",
+  "shared_pairs": 175,
+  "pool_pairs": 345,
+  "coverage": 0.5072463768115942,
+  "exact_agreement": 0.8457142857142858,
+  "linear_weighted_cohen_kappa": 0.7454339744625829,
+  "note": "Agreement measures consistency, not truth; degenerate kappa is null."
+}

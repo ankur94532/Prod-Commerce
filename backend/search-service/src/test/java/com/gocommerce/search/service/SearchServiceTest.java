@@ -13,6 +13,7 @@ import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.IndexOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
+import com.gocommerce.search.support.StubSearchHits;
 import org.springframework.data.elasticsearch.core.SearchHitsImpl;
 import org.springframework.data.elasticsearch.core.TotalHitsRelation;
 
@@ -49,7 +50,7 @@ class SearchServiceTest {
                         new BigDecimal("199900"),
                         "INR",
                         "https://example.com/mac.jpg")),
-                1, 0, 20, 1, new com.gocommerce.search.dto.SearchDtos.RetrievalInfo("hybrid", "lexically_gated_weighted_cosine", "exact", 0, 0, 1, 1.5));
+                1, 0, 20, 1, new com.gocommerce.search.dto.SearchDtos.RetrievalInfo("hybrid", "lexically_gated_weighted_cosine", "collapsed_groups_approximate", 0, 0, 1, 1.5, "productFamily"));
 
         when(cache.get(normalizedReq)).thenReturn(Optional.of(cachedResponse));
 
@@ -606,6 +607,7 @@ class SearchServiceTest {
         SearchHits<ProductDocument> emptyHits = mock(SearchHits.class);
         when(emptyHits.getSearchHits()).thenReturn(List.of());
         when(emptyHits.getTotalHits()).thenReturn(0L);
+        when(emptyHits.getAggregations()).thenAnswer(i -> StubSearchHits.groupCount(0));
         when(operations.search(any(org.springframework.data.elasticsearch.core.query.Query.class),
                 eq(ProductDocument.class))).thenReturn(emptyHits);
 
@@ -670,7 +672,9 @@ class SearchServiceTest {
                 null,
                 null,
                 List.of(hit),
-                null,
+                // One document, one family: these fixtures are about query shape, not
+                // collapsing, so the family count matches the hit count.
+                StubSearchHits.groupCount(total),
                 null,
                 null);
     }

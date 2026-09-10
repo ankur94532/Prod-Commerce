@@ -42,7 +42,7 @@ class InventoryServiceReliabilityPostgresTest {
     }
     @BeforeEach void reset() {
         jdbc.execute("TRUNCATE inventory_reservations, products CASCADE");
-        jdbc.update("INSERT INTO products (id, slug, name, price, currency, stock_quantity, active) VALUES (1, 'p', 'P', 10, 'INR', 10, true)");
+        jdbc.update("INSERT INTO products (id, slug, name, price, currency, stock_quantity, active, product_family) VALUES (1, 'p', 'P', 10, 'INR', 10, true, 'p')");
     }
     int stock() { return jdbc.queryForObject("SELECT stock_quantity FROM products WHERE id=1", Integer.class); }
 

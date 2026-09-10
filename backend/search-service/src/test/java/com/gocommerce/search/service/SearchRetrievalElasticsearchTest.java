@@ -47,6 +47,10 @@ class SearchRetrievalElasticsearchTest {
                 BigDecimal.valueOf(price), "INR", List.of(), null, stock, "black", "over-ear", "regular", "128GB", "8GB", material,
                 "audio " + name, 0L);
         doc.setSearchEmbedding(vector);
+        // Each fixture is its own family, so collapsing cannot change what these contract
+        // tests assert. Collapsing behaviour has its own fixtures in
+        // SearchCollapseElasticsearchTest.
+        doc.setProductFamily("family-" + id);
         return doc;
     }
     @BeforeAll void createFixtureIndex() {
@@ -121,7 +125,7 @@ class SearchRetrievalElasticsearchTest {
         var union = service.search(new SearchRequest("quiet journeys", null, "hybrid_rrf", 0, 20));
         assertThat(legacy.items()).extracting(SearchResultItem::id).containsExactly("7");
         assertThat(union.items()).extracting(SearchResultItem::id).containsExactlyInAnyOrder("1", "2", "7", "8");
-        assertThat(union.retrieval().totalRelation()).isEqualTo("candidate_union");
+        assertThat(union.retrieval().totalRelation()).isEqualTo("collapsed_candidate_union");
         assertThat(union.retrieval().candidateWindow()).isEqualTo(2);
         assertThat(union.total()).isEqualTo(4);
     }
@@ -140,7 +144,7 @@ class SearchRetrievalElasticsearchTest {
         assertThat(result.items()).isEmpty();
         assertThat(result.total()).isZero();
         assertThat(result.retrieval().algorithm()).isEqualTo("hnsw_cosine");
-        assertThat(result.retrieval().totalRelation()).isEqualTo("ann_candidates");
+        assertThat(result.retrieval().totalRelation()).isEqualTo("collapsed_ann_groups_approximate");
     }
 
     @Test void annAndExactVectorModesCanBeComparedOnTheSameFilters() {

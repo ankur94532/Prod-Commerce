@@ -70,6 +70,14 @@ public class ProductDocument {
     @Field(type = FieldType.Text)
     private String searchText;
 
+    /**
+     * Groups the variants of one product so a page cannot fill with six near-identical
+     * entries. Taken from the catalog when it publishes a family, and otherwise derived
+     * from the slug, which is a heuristic and is documented as one.
+     */
+    @Field(type = FieldType.Keyword)
+    private String productFamily;
+
     @Field(type = FieldType.Dense_Vector, dims = SEARCH_EMBEDDING_DIMENSIONS,
             index = true, similarity = "cosine")
     private List<Float> searchEmbedding;
@@ -209,6 +217,14 @@ public class ProductDocument {
 
     public String getMaterial() { return material; }
     public void setMaterial(String material) { this.material = material; }
+
+    public String getProductFamily() {
+        return productFamily;
+    }
+
+    public void setProductFamily(String productFamily) {
+        this.productFamily = productFamily;
+    }
 
     public String getSearchText() { return searchText; }
     public void setSearchText(String searchText) { this.searchText = searchText; }

@@ -32,6 +32,14 @@ public class Product {
     @Column(name = "category_slug")
     private String categorySlug; // e.g. "smartphones"
 
+    /**
+     * The product this row is a variant of. Search collapses result pages on it, so six
+     * colours of one backpack occupy one slot instead of six. Defaults to the slug, which
+     * makes a standalone product a family of one rather than a null nobody handles.
+     */
+    @Column(name = "product_family", nullable = false)
+    private String productFamily;
+
     private String brand;
 
     // 👉 EAGER so it's fully loaded before JSON serialization
@@ -130,6 +138,27 @@ public class Product {
 
     public void setCategorySlug(String categorySlug) {
         this.categorySlug = categorySlug;
+    }
+
+    public String getProductFamily() {
+        return productFamily;
+    }
+
+    public void setProductFamily(String productFamily) {
+        this.productFamily = productFamily;
+    }
+
+    /**
+     * A product with no family would be invisible to collapsed search, so the column is NOT
+     * NULL and this fills it in rather than letting an admin create a row that cannot be
+     * grouped. Runs on update too: renaming a slug must not leave the family dangling.
+     */
+    @PrePersist
+    @PreUpdate
+    void defaultProductFamilyToSlug() {
+        if (productFamily == null || productFamily.isBlank()) {
+            productFamily = slug;
+        }
     }
 
     public String getBrand() {

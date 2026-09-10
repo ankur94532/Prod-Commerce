@@ -9,5 +9,6 @@
   "brand": "Acme",
   "imageUrls": ["https://example.invalid/products/42.png"],
   "stockQuantity": 7,
-  "attributes": {"color": "black", "material": "mesh"}
+  "attributes": {"color": "black", "material": "mesh"},
+  "productFamily": "acme-commuter-headset"
 }

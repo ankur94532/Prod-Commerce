@@ -1,0 +1,201 @@
+{
+  "recorded_at_utc": "2026-09-09T13:43:11.301579+00:00",
+  "evidence_class": "ai_judged_pooled_evaluation",
+  "headline": "Real embedding weights and variant collapsing, measured as an A/B on one corpus. The labels are mine, an AI assessor's, not a human's.",
+  "what_changed_since_the_previous_run": [
+    "Vector modes now use BAAI/bge-small-en-v1.5 through backend/embedding-service. The earlier run used a bag-of-words hashing stub, so its vector and hybrid numbers measured the stub, not semantic retrieval, and are not a valid baseline for these.",
+    "Fuzzy matching moved onto the concatenated searchText field. 'rechargable trimer' previously returned nothing in text mode because the misspelled words straddled the name and the description; it now returns the beard trimmers.",
+    "Result pages can collapse to one hit per product family. Runs B and C differ only in that switch, against the same corpus, queries, model and judgments."
+  ],
+  "setup": {
+    "queries": "14 test-split queries, AI-authored, held out from tuning",
+    "catalog": "600 generated seed products, not a real assortment",
+    "embeddings": "BAAI/bge-small-en-v1.5, 384-dim normalized; model.safetensors sha256 3c9f31665447c8911517620762200d2245a2518d6e7208acc78cd9db317e21ad",
+    "assessor": "claude-opus-5, declared assessor_type=ai and NOT authenticated as such",
+    "judgments": {
+      "run_b_pairs": 223,
+      "run_c_pairs": 175,
+      "provenance": "135 carried forward from the 2026-09-09 run by graded_eval.py carry-forward, which moves a grade only when the product content a reviewer saw is byte-identical; the rest graded fresh"
+    },
+    "depth": 10,
+    "k": 10
+  },
+  "run_b_no_collapsing": {
+    "manifest_sha256": "0d66b53c2e847ffb90d3f712b885761cb440f2d4f3d52a69140722a25540cd8f",
+    "by_mode": {
+      "text": {
+        "pooled_ndcg@10": 0.5585348496641094,
+        "precision@10": 0.22857142857142856,
+        "pooled_recall@10": 0.5925925925925926,
+        "mrr@10": 0.3197278911564626,
+        "distinct_families@10": 2.5,
+        "redundant_results@10": 6.642857142857143,
+        "distinct_relevant_families@10": 0.42857142857142855,
+        "ndcg_scorable_queries": 13,
+        "zero_result_queries": 0
+      },
+      "vector": {
+        "pooled_ndcg@10": 0.8255811212585576,
+        "precision@10": 0.3357142857142857,
+        "pooled_recall@10": 0.9444444444444444,
+        "mrr@10": 0.5261904761904762,
+        "distinct_families@10": 4,
+        "redundant_results@10": 6,
+        "distinct_relevant_families@10": 0.7142857142857143,
+        "ndcg_scorable_queries": 13,
+        "zero_result_queries": 0
+      },
+      "hybrid": {
+        "pooled_ndcg@10": 0.5613930354529524,
+        "precision@10": 0.22857142857142856,
+        "pooled_recall@10": 0.5925925925925926,
+        "mrr@10": 0.3197278911564626,
+        "distinct_families@10": 2.2142857142857144,
+        "redundant_results@10": 6.928571428571429,
+        "distinct_relevant_families@10": 0.42857142857142855,
+        "ndcg_scorable_queries": 13,
+        "zero_result_queries": 0
+      },
+      "hybrid_rrf": {
+        "pooled_ndcg@10": 0.745853027998881,
+        "precision@10": 0.3214285714285714,
+        "pooled_recall@10": 0.8333333333333334,
+        "mrr@10": 0.4744897959183674,
+        "distinct_families@10": 3.642857142857143,
+        "redundant_results@10": 6.357142857142857,
+        "distinct_relevant_families@10": 0.5714285714285714,
+        "ndcg_scorable_queries": 13,
+        "zero_result_queries": 0
+      }
+    },
+    "paired_ndcg_differences_vs_text": {
+      "vector_minus_text": {
+        "mean_delta": 0.2670462715944483,
+        "ci95": [
+          0.011506415297135739,
+          0.5112025097098526
+        ],
+        "families": 13,
+        "queries": 13
+      },
+      "hybrid_minus_text": {
+        "mean_delta": 0.002858185788843004,
+        "ci95": [
+          0.0,
+          0.008574557366529012
+        ],
+        "families": 13,
+        "queries": 13
+      },
+      "hybrid_rrf_minus_text": {
+        "mean_delta": 0.1873181783347716,
+        "ci95": [
+          0.07979690795526331,
+          0.3001172822475853
+        ],
+        "families": 13,
+        "queries": 13
+      }
+    }
+  },
+  "run_c_collapsing_on": {
+    "manifest_sha256": "72d747da0cb418503e8ca94e2bc2fa4c1dcb2b22dff12806ded1e3a95b96ff48",
+    "by_mode": {
+      "text": {
+        "pooled_ndcg@10": 0.5030426156011639,
+        "precision@10": 0.05,
+        "pooled_recall@10": 0.6111111111111112,
+        "mrr@10": 0.36607142857142855,
+        "distinct_families@10": 5.928571428571429,
+        "redundant_results@10": 0,
+        "distinct_relevant_families@10": 0.5,
+        "ndcg_scorable_queries": 13,
+        "zero_result_queries": 0
+      },
+      "vector": {
+        "pooled_ndcg@10": 0.6429170636452513,
+        "precision@10": 0.07142857142857144,
+        "pooled_recall@10": 0.8333333333333334,
+        "mrr@10": 0.5416666666666666,
+        "distinct_families@10": 4.071428571428571,
+        "redundant_results@10": 0,
+        "distinct_relevant_families@10": 0.7142857142857143,
+        "ndcg_scorable_queries": 13,
+        "zero_result_queries": 0
+      },
+      "hybrid": {
+        "pooled_ndcg@10": 0.5235718196428717,
+        "precision@10": 0.05,
+        "pooled_recall@10": 0.6111111111111112,
+        "mrr@10": 0.36607142857142855,
+        "distinct_families@10": 5.928571428571429,
+        "redundant_results@10": 0,
+        "distinct_relevant_families@10": 0.5,
+        "ndcg_scorable_queries": 13,
+        "zero_result_queries": 0
+      },
+      "hybrid_rrf": {
+        "pooled_ndcg@10": 0.6938027409955183,
+        "precision@10": 0.0642857142857143,
+        "pooled_recall@10": 0.7777777777777778,
+        "mrr@10": 0.5119047619047619,
+        "distinct_families@10": 9.785714285714286,
+        "redundant_results@10": 0,
+        "distinct_relevant_families@10": 0.6428571428571429,
+        "ndcg_scorable_queries": 13,
+        "zero_result_queries": 0
+      }
+    },
+    "paired_ndcg_differences_vs_text": {
+      "vector_minus_text": {
+        "mean_delta": 0.13987444804408738,
+        "ci95": [
+          -0.054785440835328506,
+          0.3500210158268529
+        ],
+        "families": 13,
+        "queries": 13
+      },
+      "hybrid_minus_text": {
+        "mean_delta": 0.020529204041707737,
+        "ci95": [
+          0.0,
+          0.06158761212512321
+        ],
+        "families": 13,
+        "queries": 13
+      },
+      "hybrid_rrf_minus_text": {
+        "mean_delta": 0.19076012539435444,
+        "ci95": [
+          0.06409028029242224,
+          0.3534904508683316
+        ],
+        "families": 13,
+        "queries": 13
+      }
+    }
+  },
+  "what_the_numbers_say": {
+    "real_embeddings_changed_the_vector_result": "vector NDCG@10 went from 0.389 with the stub to 0.826 with the model, and the number of queries with any relevant item pooled went from 9 of 14 to 13 of 14. hybrid_rrf minus text is now +0.187 with a 95% interval of [+0.080, +0.300], the first time that difference has not crossed zero.",
+    "collapsing_does_what_it_was_built_to_do": "redundant slots per page went from 6.0-6.9 to 0.0 in every mode, and distinct products shown went from 2.2-4.0 to 4.1-9.8.",
+    "collapsing_looks_worse_on_the_judged_metrics_and_partly_that_is_an_artifact": "precision@10 falls from 0.23 to 0.05 and NDCG@10 from 0.56/0.83/0.75 to 0.50/0.64/0.69. Six colours of the right product are six independently relevant results, so a page of variants scores well on precision and recall by construction; the pooled NDCG ideal is drawn from the same page, so removing variants shrinks the ideal too. These metrics reward variant stuffing and cannot see the redundancy, which is why the redundancy counts were added.",
+    "the_residual_is_real_though": "mean NDCG still drops after allowing for that. The freed slots get filled with weaker matches, because this catalog does not hold ten distinct relevant products for most of these queries. Per query it goes both ways: collapsing helps b02 (0.000 to 0.344 text), m03 (0.630 to 0.851), c03 (0.291 to 0.590) and s02 under RRF (0.581 to 0.945), and hurts a03 (1.000 to 0.659) and z02 (0.836 to 0.339), where the entire relevant set was one family and showing its variants was genuinely useful.",
+    "mrr_improves_under_collapsing": "0.320 to 0.366 (text) and 0.475 to 0.512 (hybrid_rrf): the first relevant result arrives earlier."
+  },
+  "honest_reading": "Collapsing is not a free win on this evidence. It removes page redundancy completely and shows roughly twice as many distinct products, it improves the rank of the first relevant result, and it costs mean NDCG. The usual production answer is to collapse and expose the collapsed variants inline (Elasticsearch inner_hits), which would keep both; that is not built. The switch is search.collapse.enabled and both settings are reproducible with ops/evaluation/collect-run.sh.",
+  "defects_this_exercise_found": [
+    "CatalogSeeder copied products property by property and never copied productFamily, so every product reached the database as its own family and collapsing was a silent no-op that still returned plausible results and passed every test. CatalogSeederFidelityTest now reflects over Product's properties and fails on any dropped field.",
+    "ProductSeedCatalog gave families only to variants, leaving base products relying on a persistence default that does not apply in memory.",
+    "The cleanup traps in ops/evaluation/collect-run.sh and ops/testing/chaos-drill.sh aborted halfway under set -e (wait on a just-killed process returns 143), so every aborted run leaked its Elasticsearch container and a successful run exited 143.",
+    "A Redis that holds its connection open but stops answering -- an overloaded instance or a network partition, not a crash -- made a single search take 120,035ms, because the cache read and the cache write each waited out Lettuce's 60-second default command timeout. The code already treats a cache failure as a miss, but a hang is not a failure, so it never reached that path, and the chaos drill's availability-only check scored it as a pass. spring.data.redis.timeout is now 250ms in search-service and the drill asserts a latency budget under a stalled cache: 524ms measured with the fix, 120,035ms with the default restored, budget 5000ms. The same unbounded default was bounded in api-gateway (1s, on every request through the edge) and cart-service (2s, where Redis is the store); neither of those two bounds has been exercised by a drill."
+  ],
+  "limits": [
+    "AI-authored queries and AI-assigned labels. This is not a human relevance benchmark and must never be described as one.",
+    "Generated catalog. Relevance measured over it does not transfer to a real assortment.",
+    "14 test queries. Confidence intervals are wide; report the interval, never the bare mean.",
+    "Pool-bounded recall: only products some mode returned were judged.",
+    "Runs B and C have different pools by construction, because they return different results. Metrics whose denominator is the pool are therefore not strictly comparable across them; the redundancy counts, which need no judgments, are.",
+    "Nothing here has been deployed."
+  ]
+}
